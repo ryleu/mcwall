@@ -41,6 +41,14 @@ class LibraryConfig:
     height: int = 1800
     image_format: str = "webp"
     quality: int = 90
+    # Dark frames use very little of the 8-bit range — a night sky spans about
+    # 18 of 255 luma levels — so smooth gradients contour. gradfun interpolates
+    # across the bands and dithers; the dither is what hides them, and a lossy
+    # encode would strip it straight back out, so debanded output has to be
+    # near-lossless. Costs roughly 8x the disk (0.4 GB -> 3.2 GB for the grid).
+    deband: bool = True
+    # cwebp -near_lossless: 0 most aggressive, 100 off.
+    near_lossless: int = 60
     # The weather axis of the grid. Dropping "thunder" cuts 576 cells (a third
     # of the library, not half) and costs nothing in correctness: `select`
     # degrades thunder to rain through the normal fallback chain. Thunder does

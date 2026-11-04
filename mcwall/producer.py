@@ -119,10 +119,15 @@ def shaderpack_identity(config: Config) -> str:
                 digest.update(chunk)
 
     # The pack's own option overrides — this is what "the pack's settings"
-    # actually means, and what changes the look of every image.
-    digest.update(
-        normalise_properties(game / "shaderpacks" / f"{Path(config.render.shaderpack).stem}.txt")
-    )
+    # actually means, and what changes the look of every image. Iris names
+    # this after the pack entry as it appears in the folder, so for a zip it
+    # keeps the extension ("Pack.zip.txt"); hash both spellings rather than
+    # guess, or a settings change could slip through unnoticed.
+    for name in (
+        f"{config.render.shaderpack}.txt",
+        f"{Path(config.render.shaderpack).stem}.txt",
+    ):
+        digest.update(normalise_properties(game / "shaderpacks" / name))
 
     # From Iris's own config, only the two keys that decide what gets
     # rendered. The rest is bookkeeping that churns on its own: Iris fills in
@@ -534,6 +539,17 @@ def convert_one(config: Config, png: Path, staging: Path) -> bool:
         png.unlink()
         return False
     target.parent.mkdir(parents=True, exist_ok=True)
+
+    if config.library.deband:
+        # Deband straight from the lossless capture rather than from an
+        # already-encoded image: repairing a lossy WebP compounds two sets of
+        # artefacts, while this one only ever sees the original.
+        from .deband import DebandSettings, deband_one
+
+        deband_one(png, target, DebandSettings(near_lossless=config.library.near_lossless))
+        png.unlink()
+        return True
+
     # Encode beside the target and rename, so an interrupted conversion never
     # leaves a truncated image that `verify` would count as present.
     temporary = target.with_suffix(target.suffix + ".part")

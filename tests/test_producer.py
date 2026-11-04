@@ -158,7 +158,8 @@ def test_conversion_is_parallel_and_atomic(tmp_path, monkeypatch):
     from mcwall.config import Config, LibraryConfig
 
     config = dc_replace(
-        Config(), library=dc_replace(LibraryConfig(), root=tmp_path / "library")
+        Config(),
+        library=dc_replace(LibraryConfig(), root=tmp_path / "library", deband=False),
     )
     staging = tmp_path / "staging"
     for index in range(12):
@@ -188,7 +189,8 @@ def test_already_converted_images_are_not_redone(tmp_path, monkeypatch):
     from mcwall.config import Config, LibraryConfig
 
     config = dc_replace(
-        Config(), library=dc_replace(LibraryConfig(), root=tmp_path / "library")
+        Config(),
+        library=dc_replace(LibraryConfig(), root=tmp_path / "library", deband=False),
     )
     staging = tmp_path / "staging"
     png = staging / "pack" / "a.png"
@@ -217,7 +219,8 @@ def test_a_failed_conversion_keeps_the_pngs(tmp_path, monkeypatch):
     from mcwall.config import Config, LibraryConfig
 
     config = dc_replace(
-        Config(), library=dc_replace(LibraryConfig(), root=tmp_path / "library")
+        Config(),
+        library=dc_replace(LibraryConfig(), root=tmp_path / "library", deband=False),
     )
     staging = tmp_path / "staging"
     png = staging / "pack" / "a.png"
@@ -229,3 +232,43 @@ def test_a_failed_conversion_keeps_the_pngs(tmp_path, monkeypatch):
         producer.convert_staging(config, staging, workers=2)
     assert png.exists(), "the source PNG must survive a failed conversion"
     assert staging.exists()
+
+
+def test_deband_is_applied_at_conversion_when_enabled(tmp_path, monkeypatch):
+    """A fresh render should produce debanded output directly from the PNG."""
+    from dataclasses import replace as dc_replace
+
+    from mcwall import deband as deband_mod
+    from mcwall import producer
+    from mcwall.config import Config, LibraryConfig
+
+    config = dc_replace(
+        Config(),
+        library=dc_replace(LibraryConfig(), root=tmp_path / "library", deband=True),
+    )
+    staging = tmp_path / "staging"
+    png = staging / "pack" / "a.png"
+    png.parent.mkdir(parents=True, exist_ok=True)
+    png.write_bytes(b"source")
+
+    seen = {}
+
+    def fake_deband_one(source, target, settings):
+        seen["source"] = source
+        seen["near_lossless"] = settings.near_lossless
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"debanded")
+        return target.stat().st_size
+
+    monkeypatch.setattr(deband_mod, "deband_one", fake_deband_one)
+    monkeypatch.setattr(
+        producer,
+        "_encode_command",
+        lambda *a: (_ for _ in ()).throw(AssertionError("must not plain-encode")),
+    )
+
+    assert producer.convert_staging(config, staging, workers=2) == 1
+    # It debands the original capture, not a re-encoded intermediate.
+    assert seen["source"].suffix == ".png"
+    assert seen["near_lossless"] == 60
+    assert not png.exists()

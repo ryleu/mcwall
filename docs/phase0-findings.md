@@ -211,3 +211,50 @@ Sodium replaces the section renderer, so the two client counts are used only
 for *stability*, never compared against an expected total. The old frame count
 survives as a timeout with a logged warning, so a stuck job cannot hang a
 batch.
+
+## Banding, and why brightening the night did not fix it
+
+The first library went out as lossy WebP at quality 90 and the dark frames
+contoured visibly. Measuring the cause rather than guessing at it:
+
+| Frame | Sky luma p1..p99 | Levels used |
+| --- | --- | --- |
+| Midday | 110..196 | 85 |
+| Dusk | 50..128 | 78 |
+| Night | 12..31 | **18** |
+
+A night sky crossing eighteen of 255 levels contours in *any* 8-bit format, so
+lossless encoding would not have helped. Lossy WebP added block artefacts on
+top of that, but it was never the root cause.
+
+The display is already 10-bit (`XRGB2101010` on eDP-1), but every link feeding
+it is 8-bit and the hardest one is inside the game: `Screenshot.takeScreenshot`
+builds a `NativeImage` in `Format.RGBA` (4 bytes per pixel, channel offsets
+0/8/16/24) and reads it back with `_readPixels(..., 5121, ...)` — `GL_UNSIGNED_BYTE`.
+WebP has no 10-bit mode either. True 10-bit would mean changing the game's main
+render target format, the image format and the wallpaper daemon.
+
+**Brightening the night looked like the cheap fix and is not.** A six-variant
+sweep (`scripts/night_sweep.py`) found `ATM_NIGHT_I` has no effect on the sky at
+all — 1.30, 1.60 and 2.00 all produced an identical 12.3..32.0 luma range.
+Tracing it confirms why: `atmColorMult` reaches fog, clouds, nebula and aurora,
+never the sky dome, and the dome's colours are hardcoded in `skyColors.glsl`
+with no option exposed:
+
+```glsl
+vec3 nightUpSkyColor     = pow(nightColFactor, vec3(0.90)) * 0.45;
+vec3 nightMiddleSkyColor = sqrt(nightUpSkyColor) * 0.65;
+```
+
+The only exposed lever that touches the sky is `TM_EXPOSURE`, which bought
+19.7 to 22.3 levels (+13%) while brightening every day frame too. The vanilla
+brightness slider is not a lever either: it is already at its 1.0 maximum,
+`UnitDouble.validateValue` rejects anything outside 0..1 so options.txt cannot
+be edited past it, and Complementary only applies `screenBrightness` to terrain
+lighting.
+
+So the fix is `gradfun` plus near-lossless encoding, now applied during
+conversion straight from the lossless capture rather than as a repair pass over
+an already-lossy image. It reconstructs a plausible smooth gradient rather than
+recovering detail the 8-bit capture never had — for sky, that is the right
+trade. The grid goes from 0.4 GB to 3.2 GB.

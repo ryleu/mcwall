@@ -16,6 +16,14 @@ height = 1800
 format = "webp"
 # 85 -> ~0.42 GB for the full grid, 90 -> ~0.62 GB, 95 -> ~1.1 GB.
 quality = 90
+# Deband on the way in. Dark frames use very little of the 8-bit range (a night
+# sky spans ~18 of 255 luma levels), so gradients contour in any 8-bit format.
+# gradfun interpolates and dithers across the bands; the dither is what hides
+# them, so the output must be near-lossless or a lossy encode strips it back
+# out. Costs about 8x the disk: 0.4 GB -> 3.2 GB for the full grid.
+deband = true
+near_lossless = 60
+
 # The weather axis. Dropping "thunder" cuts 576 of the 1728 cells (a third)
 # and costs nothing in correctness: a real thunderstorm degrades to the rain
 # image through the normal fallback chain, logged as "weather thunder->rain".
