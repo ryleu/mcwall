@@ -158,6 +158,20 @@ Keep the split honest: a setting that only affects *how* a frame is reached
 (warm-up frames, stability ticks, parallelism) must not fork the library, and
 `tests/test_producer.py` asserts exactly that.
 
+**A matching settings hash is not a matching library.** The first migration
+adopted the existing library on a shaderpack-hash match, because that was all
+the old manifest recorded. It was a forest shot taken at a biome-anchored
+camera (`located.json`: x=-192 z=192, facing west); the config now pointed at
+a village 230 blocks away facing east. The hash matched and everything else
+differed, so 1,728 images ended up filed under a name describing a place they
+were never taken. Recover what you can prove, record it in the manifest, and
+name the rest so nobody trusts it twice.
+
+**Look at the picture.** Two libraries whose provenance is ambiguous are
+distinguishable in one glance and in no other cheap way. A single `--limit 1`
+render settled both "is this the right shot" and "does capture still work"
+for about ten minutes of wall clock, before a 5.5-hour commitment.
+
 **Rename the manifest with the directory.** The manifest names the build it
 describes, so moving a library without rewriting it leaves the display path
 unable to find a single image. The first version of the migration renamed only
@@ -177,6 +191,24 @@ the last 30 minutes of the radar nowcast.
 
 Worth checking a source against ground truth before concluding the code is
 wrong — the station observation is what proved the model was honest.
+
+## A dry run writes nothing — check that every time
+
+Twice now, `--dry-run` has taken the live library offline: once by renaming a
+directory without its manifest, once by stamping the manifest for a build with
+no images in it. Both times the planning code did the write, and the dry-run
+check sat below it.
+
+Put the early return above the first write, and pin it with a test that fails
+when the order is restored — `tests/test_producer.py` has one.
+
+## Preflight what the game needs, before launching the game
+
+A render with no capture mod installed boots, renders a title screen, captures
+nothing, and fails only when the watchdog gives up — minutes, with the cause
+buried in `latest.log` and nothing in the mod list to notice unless you look
+for an absence. `run_jobs` now refuses up front if no `mcwall-capture-*.jar`
+is in the instance.
 
 ## Keep documentation in the present tense
 

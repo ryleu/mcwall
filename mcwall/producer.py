@@ -665,6 +665,16 @@ def run_jobs(
             f"Stop it first: kill {' '.join(map(str, stray))}"
         )
 
+    # Without the mod the game is just a game: it boots, renders a title
+    # screen, captures nothing, and the batch fails only once the watchdog
+    # gives up — several minutes per attempt, with the cause buried in a log.
+    if not list((game_dir(config) / "mods").glob("mcwall-capture-*.jar")):
+        raise RenderError(
+            "the capture mod is not installed in "
+            f"'{config.render.prism_instance}', so the game would render "
+            "nothing.\nRun `mcwall setup` to install it."
+        )
+
     ensure_world_variants(config, jobs)
 
     staging.mkdir(parents=True, exist_ok=True)

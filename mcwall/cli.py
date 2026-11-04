@@ -117,6 +117,16 @@ def cmd_render(args) -> int:
         print("library is complete; nothing to render")
         return 0
 
+    print(f"{len(plan.jobs)} jobs queued")
+
+    # Before any writing. The manifest names the active build, so stamping it
+    # here would retire the library currently on screen in favour of one with
+    # no images in it yet — and a dry run is the one command that promises to
+    # leave the disk alone.
+    if args.dry_run:
+        print("--dry-run: not launching the game")
+        return 0
+
     config.library.root.mkdir(parents=True, exist_ok=True)
     plan.manifest.rendered_at = datetime.now(timezone.utc).isoformat()
     # Stamp the identity on a library that predates the check, so the next
@@ -127,11 +137,6 @@ def cmd_render(args) -> int:
     plan.manifest.write(config.library.root)
 
     staging = config.library.root / ".staging"
-    print(f"{len(plan.jobs)} jobs queued")
-
-    if args.dry_run:
-        print("--dry-run: not launching the game")
-        return 0
 
     started = time.monotonic()
     status = producer.run_jobs(

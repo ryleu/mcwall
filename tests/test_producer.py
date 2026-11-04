@@ -421,3 +421,60 @@ def test_a_library_from_other_settings_is_left_alone(config):
 
     assert not migrate_legacy_build(config, pack_id(config))
     assert legacy.is_dir(), "a library from other settings was adopted anyway"
+
+
+def test_rendering_without_the_capture_mod_fails_fast(config, monkeypatch):
+    """Otherwise the game boots, captures nothing, and times out minutes later.
+
+    The failure then looks like a stuck render rather than a missing jar.
+    """
+    from mcwall import power, producer
+
+    game = producer.game_dir(config)
+    (game / "mods").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(producer, "running_clients", lambda _c: [])
+    monkeypatch.setattr(
+        producer, "read_power", lambda: power.PowerState(on_ac=True, percent=100)
+    )
+
+    # Nothing past the preflight may run during this test.
+    class Launched(Exception):
+        pass
+
+    def refuse(*_args, **_kwargs):
+        raise Launched
+
+    monkeypatch.setattr(producer, "ensure_world_variants", refuse)
+    staging = config.library.root / ".staging"
+
+    with pytest.raises(producer.RenderError, match="mcwall setup"):
+        producer.run_jobs(config, [], staging)
+
+    # With the jar there, the preflight passes and the run proceeds.
+    (game / "mods" / "mcwall-capture-0.1.0.jar").write_bytes(b"")
+    with pytest.raises(Launched):
+        producer.run_jobs(config, [], staging)
+
+
+def test_dry_run_leaves_the_active_library_alone(config, monkeypatch, capsys):
+    """A dry run plans; it must not retire the library currently on screen.
+
+    Writing the manifest here names a build with no images in it yet, so the
+    display path goes looking in an empty directory and the wallpaper stops
+    updating until a full render finishes hours later.
+    """
+    from mcwall import cli, power, producer
+    from mcwall.library import Manifest
+
+    root = config.library.root
+    Manifest.from_config(config, "settings", pack_id="the-build-on-screen").write(root)
+
+    monkeypatch.setattr(cli, "_load", lambda: config)
+    monkeypatch.setattr(cli, "read_power", lambda: power.PowerState(True, 100))
+    monkeypatch.setattr(
+        producer, "run_jobs", lambda *a, **k: pytest.fail("dry run launched the game")
+    )
+
+    assert cli.main(["render", "--dry-run"]) == 0
+    assert "jobs queued" in capsys.readouterr().out
+    assert Manifest.read(root).pack_id == "the-build-on-screen"
