@@ -1,28 +1,40 @@
 self:
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 
 let
   cfg = config.services.mcwall;
-  inherit (lib) mkEnableOption mkOption mkIf types;
+  inherit (lib)
+    mkEnableOption
+    mkOption
+    mkIf
+    types
+    ;
 
-  # home-manager ships one wallpaper-daemon module, services.awww. The older
-  # services.swww.{enable,package,extraArgs} are mkRenamedOptionModule aliases
-  # onto it, so reading services.awww covers both spellings — there is nothing
-  # separate to detect. It defines the unit `awww.service`.
   hasAwwwModule = config.services ? awww;
   awwwEnabled = hasAwwwModule && config.services.awww.enable;
 
   daemonUnit =
-    if cfg.daemonUnit != null then cfg.daemonUnit
-    else if awwwEnabled then "awww.service"
-    else null;
+    if cfg.daemonUnit != null then
+      cfg.daemonUnit
+    else if awwwEnabled then
+      "awww.service"
+    else
+      null;
 
   # Our unit invokes the client binary, so it needs it on PATH. Take it from
   # the daemon module when that is what is providing it.
   daemonPackage =
-    if cfg.daemonPackage != null then cfg.daemonPackage
-    else if awwwEnabled then config.services.awww.package
-    else pkgs.awww;
+    if cfg.daemonPackage != null then
+      cfg.daemonPackage
+    else if awwwEnabled then
+      config.services.awww.package
+    else
+      pkgs.awww;
 in
 {
   options.services.mcwall = {
@@ -102,9 +114,6 @@ in
           or point mcwall at a unit you run yourself:
 
               services.mcwall.daemonUnit = "my-wallpaper.service";
-
-          mcwall deliberately will not start a daemon itself: mcwall.service is
-          a oneshot, so systemd would reap the daemon along with it.
         '';
       }
     ];
@@ -117,6 +126,7 @@ in
         # Needs a compositor to talk to; never block the session on it.
         After = [ "graphical-session.target" ] ++ lib.optional (daemonUnit != null) daemonUnit;
         PartOf = [ "graphical-session.target" ];
+        ConditionPathExists = "%h/.config/mcwall/config.toml";
         # mcwall apply fails outright without a daemon rather than starting
         # one, so the dependency is a hard Requires, not a Wants.
         Requires = lib.optional (daemonUnit != null) daemonUnit;
@@ -125,9 +135,16 @@ in
         Type = "oneshot";
         ExecStart = "${cfg.package}/bin/mcwall apply";
         Environment = [
-          "PATH=${lib.makeBinPath ([ daemonPackage pkgs.procps ]
-            ++ lib.optional cfg.enableLoops pkgs.mpvpaper
-            ++ cfg.extraPath)}"
+          "PATH=${
+            lib.makeBinPath (
+              [
+                daemonPackage
+                pkgs.procps
+              ]
+              ++ lib.optional cfg.enableLoops pkgs.mpvpaper
+              ++ cfg.extraPath
+            )
+          }"
         ];
         # The display path must never hold the session up.
         TimeoutStartSec = "30s";
