@@ -38,28 +38,23 @@ world = "mcwall-template"
 # volumetrics have settled. Check with scripts/repeatability.py: PSNR between
 # two renders of the same job should be above 40 dB.
 warmup_frames = 120
-# x, y, z, yaw, pitch. Pick with `mcwall scout`. The x and z are replaced by
-# the located biome unless locate_biome is empty, so height and heading are
-# the parts that matter here.
-camera = [-191.5, 98.0, 192.5, 90.0, -12.0]
+# The camera is NOT configured here. It is read from the world's own save, so
+# the shot is moved by flying somewhere in-game and quitting — see
+# `mcwall edit`. This file only changes how mcwall behaves, never what the
+# pictures are of.
 render_distance = 16
 # Ticks the chunk counts must hold steady before a capture is allowed.
 terrain_stable_ticks = 40
 job_timeout_seconds = 180
 allow_on_battery = false
 
-# The camera's x and z are re-anchored onto the nearest of these biomes.
-# Serene Seasons recolours broadleaf foliage strongly and conifers barely at
-# all, so a taiga camera would make all twelve sub-seasons look alike apart
-# from winter snow. Set to [] to use `camera` exactly as written.
-locate_biome = [
-  "minecraft:forest",
-  "minecraft:flower_forest",
-  "minecraft:birch_forest",
-  "minecraft:dark_forest",
-  "minecraft:plains",
-  "minecraft:meadow",
-]
+# Empty: the camera comes from where you were standing, and a biome search
+# would overrule its x and z. Name biomes to have the camera placed
+# automatically instead — useful because Serene Seasons recolours broadleaf
+# foliage strongly and conifers barely at all, so a taiga shot makes all
+# twelve sub-seasons look alike apart from winter snow.
+#   locate_biome = ["minecraft:forest", "minecraft:birch_forest", "minecraft:plains"]
+locate_biome = []
 locate_radius = 6000
 
 # Winter renders in a snow-covered copy of the template. Snow is placed

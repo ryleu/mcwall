@@ -63,10 +63,11 @@ class RenderConfig:
     prism_instance: str = "mc-wallpaper"
     prism_account: str = "StoleYourSushi"
     shaderpack: str = "ComplementaryUnbound_r5.9.3.zip"
+    # Default world to render from; `mcwall render --world` overrides it per
+    # run. The camera is not here: it is read from the world's own save, so
+    # moving the shot means flying somewhere and quitting, not editing a file.
     world: str = "mcwall-template"
     warmup_frames: int = 120
-    # Camera spot in the template world: x y z yaw pitch.
-    camera: tuple[float, float, float, float, float] = (0.5, 80.0, 0.5, -90.0, -10.0)
     render_distance: int = 16
     # Ticks the chunk counts must hold steady before a capture is allowed.
     terrain_stable_ticks: int = 40
@@ -74,14 +75,10 @@ class RenderConfig:
     # broadleaf foliage strongly and conifers barely at all, so a taiga camera
     # would make all twelve sub-seasons look alike. Empty disables the search
     # and uses `camera` as given.
-    locate_biome: tuple[str, ...] = (
-        "minecraft:forest",
-        "minecraft:flower_forest",
-        "minecraft:birch_forest",
-        "minecraft:dark_forest",
-        "minecraft:plains",
-        "minecraft:meadow",
-    )
+    # Empty by default: the camera comes from where the player was standing,
+    # and a biome search would overrule the x and z of a shot set by hand.
+    # Name biomes here to have the camera placed automatically instead.
+    locate_biome: tuple[str, ...] = ()
     locate_radius: int = 6000
     # Winter sub-seasons render in a snow-covered copy of the template. Snow
     # layers only form on random block ticks, and the grid renders with
@@ -115,8 +112,12 @@ class Config:
     slot_ticks: tuple[int, ...] | None = None
 
     @property
-    def pack_id(self) -> str:
-        """Library sub-directory for the current shaderpack build."""
+    def pack_stem(self) -> str:
+        """Readable half of the library directory name.
+
+        The full name adds an identity hash; see `producer.pack_id`, which
+        needs the world's seed and so cannot live here.
+        """
         stem = Path(self.render.shaderpack).stem
         return stem.lower().replace(" ", "-").replace("_", "-")
 

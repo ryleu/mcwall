@@ -12,8 +12,54 @@ from mcwall.producer import build_plan, world_for
 from mcwall.seasons import Phase, Season, SubSeason
 
 
+def _move_camera(config, pos):
+    """Move the player in the fixture's world, as playing the game would."""
+    import nbtlib
+
+    from mcwall import producer
+
+    level = producer.game_dir(config) / "saves" / "tpl" / "level.dat"
+    with nbtlib.load(level) as handle:
+        handle["Data"]["Player"]["Pos"] = nbtlib.List[nbtlib.Double](
+            [nbtlib.Double(v) for v in pos]
+        )
+
+
 @pytest.fixture
-def config(tmp_path):
+def config(tmp_path, monkeypatch):
+    """A config whose render instance is a throwaway tree with one world.
+
+    The camera lives in the world's save, so a fixture without one cannot
+    plan anything — which is the behaviour we want, just not here.
+    """
+    nbtlib = pytest.importorskip("nbtlib")
+    from mcwall import producer
+
+    game = tmp_path / "game"
+    world = game / "saves" / "tpl"
+    world.mkdir(parents=True)
+    nbtlib.File(
+        {
+            "Data": nbtlib.Compound(
+                {
+                    "LevelName": nbtlib.String("tpl"),
+                    "WorldGenSettings": nbtlib.Compound({"seed": nbtlib.Long(4242)}),
+                    "Player": nbtlib.Compound(
+                        {
+                            "Pos": nbtlib.List[nbtlib.Double](
+                                [nbtlib.Double(v) for v in (1.5, 70.0, -2.5)]
+                            ),
+                            "Rotation": nbtlib.List[nbtlib.Float](
+                                [nbtlib.Float(v) for v in (90.0, -12.0)]
+                            ),
+                        }
+                    ),
+                }
+            )
+        }
+    ).save(world / "level.dat", gzipped=True)
+    monkeypatch.setattr(producer, "game_dir", lambda _config: game)
+
     return replace(
         Config(),
         library=replace(LibraryConfig(), root=tmp_path / "library"),
@@ -86,14 +132,81 @@ def test_existing_images_are_not_replanned(config, tmp_path):
     assert done["output"] not in {job["output"] for job in again.jobs}
 
 
-def test_plan_reuses_an_existing_manifest(config):
-    manifest = Manifest.from_config(config, "hash")
+def test_plan_reuses_a_manifest_for_the_same_build(config):
+    from mcwall.producer import pack_id
+
+    manifest = Manifest.from_config(config, "hash", pack_id=pack_id(config))
     manifest.ticks = [0, 12000]
     manifest.write(config.library.root)
 
     plan = build_plan(config)
     assert plan.manifest.ticks == [0, 12000]
     assert plan.total == 12 * 3 * 2
+
+
+def test_a_different_build_does_not_reuse_the_old_manifest(config):
+    """Changing what the pictures are of must not reuse the old grid."""
+    from dataclasses import replace as dc_replace
+
+    from mcwall.producer import pack_id
+
+    manifest = Manifest.from_config(config, "hash", pack_id=pack_id(config))
+    manifest.ticks = [0, 12000]
+    manifest.write(config.library.root)
+
+    # Moving the player in the world moves the shot, and so the build.
+    _move_camera(config, (111.0, 70.0, 222.0))
+    plan = build_plan(config)
+    assert plan.manifest.pack_id != manifest.pack_id
+    assert plan.manifest.ticks == config.ticks(), "stale grid carried over"
+
+
+def test_identity_covers_camera_resolution_and_distance(config):
+    """Anything that changes the picture must change the directory."""
+    from dataclasses import replace as dc_replace
+
+    from mcwall.producer import pack_id
+
+    base = pack_id(config)
+    variants = {
+        "resolution": dc_replace(config, library=dc_replace(config.library, width=1920)),
+        "render_distance": dc_replace(config, render=dc_replace(config.render, render_distance=8)),
+    }
+    for name, variant in variants.items():
+        assert pack_id(variant) != base, f"{name} does not change the build key"
+
+    # Warm-up frames decide how settled a frame is, not what it shows.
+    tuned = dc_replace(config, render=dc_replace(config.render, warmup_frames=60))
+    assert pack_id(tuned) == base, "warm-up frames should not fork the library"
+
+    # Moving the player is a different shot, so a different build.
+    _move_camera(config, (500.0, 90.0, -500.0))
+    assert pack_id(config) != base, "moving the camera does not change the build key"
+
+
+def test_the_build_key_says_how_it_was_made(config):
+    """A shelf of libraries has to be tellable apart without opening them."""
+    from mcwall.producer import pack_id
+
+    key = pack_id(config)
+    assert key.startswith("tpl-"), key          # the world
+    assert "4242" in key, key                    # its seed
+    assert config.pack_stem in key, key          # the shaderpack
+    assert key != f"tpl-4242-{config.pack_stem}", "no identity hash"
+
+
+def test_a_world_never_opened_cannot_be_rendered(config, tmp_path):
+    """Better to say so than to render 1,728 pictures of spawn."""
+    import nbtlib
+
+    from mcwall import producer
+
+    world = producer.game_dir(config) / "saves" / "tpl"
+    nbtlib.File({"Data": nbtlib.Compound({"LevelName": nbtlib.String("tpl")})}).save(
+        world / "level.dat", gzipped=True
+    )
+    with pytest.raises(producer.RenderError, match="mcwall edit"):
+        build_plan(config)
 
 
 # --- shaderpack identity ---------------------------------------------------
@@ -272,3 +385,39 @@ def test_deband_is_applied_at_conversion_when_enabled(tmp_path, monkeypatch):
     assert seen["source"].suffix == ".png"
     assert seen["near_lossless"] == 60
     assert not png.exists()
+
+
+def test_adopting_an_older_library_keeps_it_readable(config):
+    """Renaming the directory without the manifest blinds the display path.
+
+    A dry run plans but never writes a manifest, so if the rename did not
+    carry one the library would stay unreadable until the next full render.
+    """
+    from mcwall.library import Manifest
+    from mcwall.producer import migrate_legacy_build, pack_id, shaderpack_identity
+
+    root = config.library.root
+    legacy = root / config.pack_stem
+    (legacy / "mid_autumn" / "clear").mkdir(parents=True)
+    Manifest.from_config(
+        config, shaderpack_identity(config), pack_id=config.pack_stem
+    ).write(root)
+
+    key = pack_id(config)
+    assert migrate_legacy_build(config, key)
+    assert (root / key).is_dir(), "images left behind"
+    assert Manifest.read(root).pack_id == key, "manifest still names the old build"
+
+
+def test_a_library_from_other_settings_is_left_alone(config):
+    """Its images are not of this build, so renaming would misfile them."""
+    from mcwall.library import Manifest
+    from mcwall.producer import migrate_legacy_build, pack_id
+
+    root = config.library.root
+    legacy = root / config.pack_stem
+    legacy.mkdir(parents=True)
+    Manifest.from_config(config, "a-different-hash", pack_id=config.pack_stem).write(root)
+
+    assert not migrate_legacy_build(config, pack_id(config))
+    assert legacy.is_dir(), "a library from other settings was adopted anyway"

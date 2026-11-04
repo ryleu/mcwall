@@ -64,15 +64,27 @@ entity, so `/tp @s` and `/gamemode` match nothing, and
 and game mode go through `ServerPlayer.teleportTo` and `setGameMode` instead.
 Commands that need no entity (`season set`, `difficulty`, `gamerule`) are fine.
 
-**The camera is anchored in a broadleaf biome.** Serene Seasons recolours
-temperate broadleaf foliage strongly and conifers barely at all. World spawn
-here is spruce taiga, where all twelve sub-seasons would look alike apart from
-winter snow — twelvefold library for no visible difference. `BiomeLocator`
-searches outward for `forest, flower_forest, birch_forest, dark_forest,
-plains, meadow` and re-anchors the camera's x and z. It forces the chunk to
+**The camera comes from the world, and biome anchoring is opt-in.** The shot
+is read from `level.dat` — wherever the player was standing when they quit —
+so framing is chosen by looking at it rather than by editing coordinates.
+
+`BiomeLocator` can override the camera's x and z instead, searching outward
+for a named biome. It exists because Serene Seasons recolours temperate
+broadleaf foliage strongly and conifers barely at all: world spawn here is
+spruce taiga, where all twelve sub-seasons would look alike apart from winter
+snow, a twelvefold library for no visible difference. It forces the chunk to
 exist before reading its height, because the biome search works on the
 generator's noise rather than loaded chunks and would otherwise answer with
-the world floor.
+the world floor. `locate_biome` defaults to empty, since a search that moves
+the camera would discard a shot that was just framed by hand.
+
+**The build's identity is its directory name.** Shaderpack and settings, seed,
+camera, resolution and render distance are hashed into
+`<world>-<seed>-<pack>-<hash>`, so changing any of them renders alongside the
+old library rather than over it. The config file is left to runtime behaviour
+only. Adopting a library built before this means renaming its directory *and*
+rewriting its manifest — the manifest names the build it describes, and a
+rename alone makes every image unfindable.
 
 **Terrain readiness gates each capture, not a frame count.** At render
 distance 16 a fresh camera spot has thousands of chunks to generate. Three

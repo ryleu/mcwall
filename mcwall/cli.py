@@ -99,23 +99,14 @@ def cmd_render(args) -> int:
         args.sub_season = (args.sub_season or []) + [here.key]
         print(f"current sub-season: {here.key}")
 
-    # A settings change inside the same pack makes every existing image subtly
-    # wrong, and nothing on disk would show it. Say so, and make the rebuild an
-    # explicit choice rather than silently re-rendering hours of work.
     identity = producer.shaderpack_identity(config)
-    stale = producer.build_plan(config).manifest.settings_hash
-    if stale and stale != identity and not args.rebuild:
-        raise SystemExit(
-            f"shaderpack settings changed since the library was rendered\n"
-            f"  library: {stale}\n"
-            f"  current: {identity}\n"
-            f"pass --rebuild to re-render it, or restore the old settings"
-        )
-
     plan = producer.build_plan(config, rebuild=args.rebuild)
-    if args.rebuild and stale != identity:
-        print(f"rebuilding: shaderpack settings {stale} -> {identity}")
-        plan.manifest.settings_hash = identity
+    # The build directory is keyed on everything that decides the picture, so
+    # a changed shaderpack, world, camera or resolution simply lands somewhere
+    # new and leaves the old images alone.
+    print(f"build:  {plan.manifest.pack_id}")
+    if plan.manifest.seed is not None:
+        print(f"world:  {plan.manifest.world} (seed {plan.manifest.seed})")
 
     if args.sub_season:
         wanted = {SubSeason.from_key(key).serene_name.lower() for key in args.sub_season}
@@ -234,36 +225,23 @@ def cmd_apply(args) -> int:
     return 0
 
 
-def _adopt(config, world_dir, save: bool) -> int:
-    """Report the camera a world was left at, and optionally keep it."""
+def _report(config, world_dir) -> int:
+    """Describe a world's shot and how to render it.
+
+    Nothing is written. The camera lives in the world's save, so a world is
+    already a complete description of a shot — there is no config to keep in
+    step with it.
+    """
     camera = session.read_camera(world_dir)
+    seed = session.read_seed(world_dir)
     print(f"world:  {world_dir.name}")
+    print(f"seed:   {seed}")
     print(f"camera: {camera}")
-
-    if not save:
-        print("\n--no-save: config untouched")
-        return 0
-
-    values = {
-        "camera": list(camera.as_tuple()),
-        "world": world_dir.name,
-        # An explicit camera and the biome search cannot both win. The search
-        # replaces x and z, which would silently discard the framing that was
-        # just set by hand.
-        "locate_biome": [],
-    }
-    path = config_mod.update("render", values)
-    print(f"\nsaved to {path}")
-    print("  render.camera       =", values["camera"])
-    print("  render.world        =", values["world"])
-    print("  render.locate_biome = []  (so the biome search cannot move it)")
-
-    if world_dir.name != config.render.world:
-        print(f"\nnote: the render world changed to {world_dir.name!r}.")
-        print("      winter needs its snow variant rebuilt:")
-        print(f"        rm -rf {session.saves_dir(producer.game_dir(config))}/{world_dir.name}-snow")
-    print("\nexisting images were rendered from the old camera; `mcwall plan`")
-    print("will still call them present. Use `mcwall render --rebuild` to redo them.")
+    print()
+    print("render it with:")
+    print(f"  mcwall render --world {world_dir.name!r}")
+    if world_dir.name == config.render.world:
+        print("  (or just `mcwall render` — this is the configured default)")
     return 0
 
 
@@ -299,13 +277,13 @@ def cmd_edit(args) -> int:
 
     print()
     try:
-        return _adopt(config, world_dir, save=not args.no_save)
+        return _report(config, world_dir)
     except session.NoPlayerPosition as error:
         raise SystemExit(str(error))
 
 
 def cmd_adopt(args) -> int:
-    """Take the camera from a world without opening the game."""
+    """Show the shot a world holds, without opening the game."""
     config = _load()
     world_dir = (
         session.saves_dir(producer.game_dir(config)) / args.world
@@ -315,7 +293,7 @@ def cmd_adopt(args) -> int:
     if world_dir is None or not world_dir.exists():
         raise SystemExit("no world found in the render instance")
     try:
-        return _adopt(config, world_dir, save=not args.no_save)
+        return _report(config, world_dir)
     except session.NoPlayerPosition as error:
         raise SystemExit(str(error))
 
@@ -349,7 +327,7 @@ def cmd_scout(args) -> int:
     print("frames:")
     for image in images:
         print(f"  {image}")
-    print("\npick one, then set [render].camera in", config_mod.CONFIG_PATH)
+    print("\npick one, then fly there with `mcwall edit` — the world holds the shot")
     return 0
 
 
@@ -384,11 +362,11 @@ def cmd_deband(args) -> int:
     """Repair banding in an existing library, non-destructively."""
     config = _load()
     root = config.library.root
-    pack = root / config.pack_id
+    pack = root / producer.pack_id(config)
     if not pack.is_dir():
         raise SystemExit(f"no rendered images at {pack}")
 
-    staged = root / deband_mod.STAGE_DIR / config.pack_id
+    staged = root / deband_mod.STAGE_DIR / producer.pack_id(config)
     settings = deband_mod.DebandSettings(
         strength=args.strength, radius=args.radius, near_lossless=args.near_lossless
     )
@@ -536,15 +514,13 @@ def main(argv: list[str] | None = None) -> int:
     edit = subparsers.add_parser(
         "edit", help="open the instance to set the shot, then adopt the camera"
     )
-    edit.add_argument("--world", help="which save to adopt from (default: last played)")
-    edit.add_argument("--no-save", action="store_true", help="report, do not write config")
+    edit.add_argument("--world", help="which save to report (default: last played)")
     edit.set_defaults(func=cmd_edit)
 
     adopt = subparsers.add_parser(
-        "adopt", help="take the camera from a world without opening the game"
+        "adopt", help="show the shot a world holds, without opening the game"
     )
     adopt.add_argument("--world")
-    adopt.add_argument("--no-save", action="store_true")
     adopt.set_defaults(func=cmd_adopt)
 
     scout_parser = subparsers.add_parser("scout", help="render camera candidates to choose from")

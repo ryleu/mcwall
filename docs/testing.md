@@ -1,7 +1,7 @@
 # Testing
 
 ```sh
-nix flake check              # 132 unit tests in a sandbox: no network, no game
+nix flake check              # 153 unit tests in a sandbox: no network, no game
 pytest -q tests              # the same, in the devShell
 pytest -m network            # adds the Skyfield ephemeris cross-check
 mcwall verify --decode       # opens every image in the library
@@ -19,6 +19,8 @@ Everything except the visual review runs without a person watching.
 | Terrain ready before capture | `BatchRunner.terrainReady` | Implemented; the frame count survives only as a timeout that logs a warning. |
 | Power stop | `watch` polls `/sys/class/power_supply` and writes `STOP`; the mod checks it between jobs | Implemented. `tests/test_power.py` covers the state reading, including this laptop's two always-offline USB-C PD ports. |
 | Conversion | `tests/test_producer.py` | Passing: parallel, atomic, skips existing, and a failure keeps its source PNGs so a rerun retries. |
+| Build identity | `tests/test_producer.py` | Passing: seed, camera, resolution and render distance each fork the library; warm-up frames do not. A world never played in refuses to plan rather than rendering spawn. |
+| Adopting an older library | `tests/test_producer.py` | Passing: the rename carries the manifest, and a library built with other shaderpack settings is left where it is. |
 | Slot placement | `tests/test_scout.py` | Passing: slots concentrate where the picture changes, spread evenly when it changes uniformly, and identical frames are rejected rather than guessed at. |
 | Daemon dependency | `tests/test_apply.py` | Passing: `apply` raises rather than spawning a daemon, and the error names the unit to start. |
 | home-manager module | Built as real `homeManagerConfiguration`s | `services.awww` and `services.swww` both yield `Requires=awww.service`; an explicit `daemonUnit` passes through; neither fails to evaluate. |
@@ -42,7 +44,9 @@ Everything except the visual review runs without a person watching.
 - `test_select.py` pins the fallback order — weather is substituted before
   time, season never — and asserts selection spawns no subprocess.
 - `test_producer.py` asserts the job manifest contains nothing
-  machine-specific, so a mode 2 producer on another host can consume it.
+  machine-specific, so a mode 2 producer on another host can consume it, and
+  pins the config/output split: only settings that change what a frame *shows*
+  may change the build id.
 
 ## Things worth re-testing after a change
 

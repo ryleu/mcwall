@@ -132,6 +132,28 @@ A 12-core deband pass burned 18% of the battery in ten minutes and would not
 have finished. Check `/sys/class/power_supply/AC/online` before launching
 anything expensive, and make long jobs resumable so stopping costs nothing.
 
+## Configuration changes behaviour, not output
+
+The camera, the world and the seed are read from the world save; the config
+file only changes what mcwall does at runtime. Anything that changes what the
+pictures look like — shaderpack and its settings, seed, camera, resolution,
+render distance — is hashed into the library's directory name instead.
+
+Two things follow, and both were worth the change. Builds no longer overwrite
+each other, so trying a second camera does not cost the first library. And
+there is no configuration to edit before a render, so a config file can never
+disagree with the images sitting next to it.
+
+Keep the split honest: a setting that only affects *how* a frame is reached
+(warm-up frames, stability ticks, parallelism) must not fork the library, and
+`tests/test_producer.py` asserts exactly that.
+
+**Rename the manifest with the directory.** The manifest names the build it
+describes, so moving a library without rewriting it leaves the display path
+unable to find a single image. The first version of the migration renamed only
+the directory, and a `--dry-run` — which deliberately writes nothing — was
+enough to take 1,728 images offline until the next full render.
+
 ## Keep documentation in the present tense
 
 Comments and docs describe how the code is *now* and why. They do not narrate

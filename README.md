@@ -79,25 +79,49 @@ launcher profiles are not touched.
 
 `mcwall edit` opens the render instance as an ordinary game. Create a world
 with whatever seed you like, fly where you want, set the framing, tune the
-shaderpack in Iris's options, then quit. On exit the camera is read back out
-of the world's `level.dat` and written to config — Minecraft saves the
-player's position and rotation on quit, so nothing has to be captured live.
+shaderpack in Iris's options, then quit. The shot is wherever you were
+standing: Minecraft saves the player's position and rotation on quit, so
+`mcwall render` reads the camera straight out of that world's `level.dat`.
+
+Nothing is written back to config. To render from a different spot, fly
+somewhere else and quit; to render from a different world, pass
+`--world <name>`. The config file never says where the camera is.
 
 The capture mod only runs when the orchestrator sets `MCWALL_CAPTURE=1`, which
 it does only for a headless render. Opening the instance by hand — from
 `mcwall edit` or from Prism directly — is always just the game, even with a
 job manifest sitting there from the last render.
 
-Adopting a camera sets `locate_biome = []`, because the biome search replaces
-x and z and would otherwise discard the framing you just set. `mcwall adopt`
-does the same without opening the game, and `--no-save` reports without
-writing.
+`mcwall adopt` prints what a world would render as — its seed, its camera and
+the command to render it — without opening the game or writing anything.
+
+`locate_biome` is empty by default, because the biome search replaces the
+camera's x and z and would discard the framing you just set. Name biomes in it
+only if you would rather have the camera placed for you.
 
 Your in-game video settings survive: `mcwall setup` will not overwrite an
 existing `options.txt` or `iris.properties` unless you pass `--force`.
 
-The seed comes from the world, not from config. The library's manifest records
-the world name and its seed so a build can be traced back.
+### Where the images go
+
+Each build gets its own directory, named after what produced it:
+
+```
+~/.local/share/mcwall/library/new-world-69420018030897796-complementaryunbound-r5.9.3-76496f5866
+                              ^world      ^seed             ^shaderpack            ^the rest
+```
+
+The trailing hash covers the shaderpack and its settings, the seed, the
+camera, the resolution and the render distance — everything that changes what
+the pictures look like. Change any of them and the next render goes to a new
+directory, so builds never overwrite each other and you never have to edit a
+config file to keep one. Settings that only affect *how* a frame is reached,
+like warm-up frames, do not fork the library.
+
+This is the rule the config file follows: it changes mcwall's behaviour at
+runtime, never what gets built. The world, its seed and the camera all come
+from the save itself, and the manifest records them so a build can be traced
+back to a reproducible starting point.
 
 Winter renders in a snow-covered variant, and that variant is a **copy** of
 the world you chose rather than a fresh generation. Generating it would only

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import logging
 import os
 import shutil
@@ -166,6 +167,106 @@ def normalise_properties(path: Path) -> bytes:
     return "\n".join(sorted(settings)).encode()
 
 
+def render_camera(config: Config) -> tuple[float, float, float, float, float]:
+    """Where the shot is taken from: the world's own saved player position.
+
+    The world is the source of truth, so changing the shot means flying
+    somewhere and quitting rather than editing a config file. A world that has
+    never been opened has no camera, and that is worth saying plainly instead
+    of rendering 1,728 pictures of wherever spawn happened to be.
+    """
+    from . import session
+
+    world = session.saves_dir(game_dir(config)) / config.render.world
+    try:
+        return session.read_camera(world).as_tuple()
+    except session.NoPlayerPosition as error:
+        raise RenderError(
+            f"{error}\n"
+            f"`mcwall edit` opens the instance so you can set the shot."
+        ) from error
+
+
+def world_slug(name: str) -> str:
+    """A world name reduced to something safe in a path."""
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    return slug or "world"
+
+
+def library_identity(config: Config) -> str:
+    """Hash of everything that decides what the images look like.
+
+    The shaderpack and its settings, the world's seed, where the camera
+    stands and which way it points, the resolution, and how far it can see.
+    Change any of them and the pictures change, so they belong in the
+    directory name rather than in a warning: a different build lands in a
+    different directory, the old one is left alone, and `plan` cannot mistake
+    stale images for finished work.
+
+    Warm-up frames are deliberately absent. They decide how settled a frame
+    is, not what it is of, and tuning them should not fork the library.
+    """
+    digest = hashlib.sha256()
+    digest.update(shaderpack_identity(config).encode())
+    digest.update(str(world_seed(config)).encode())
+    digest.update(",".join(f"{v:.3f}" for v in render_camera(config)).encode())
+    digest.update(f"{config.library.width}x{config.library.height}".encode())
+    digest.update(str(config.render.render_distance).encode())
+    return digest.hexdigest()[:10]
+
+
+def pack_id(config: Config) -> str:
+    """Directory name describing how this build was made.
+
+    World, seed and shaderpack are in the name so a shelf of libraries can be
+    told apart at a glance; the hash on the end covers the rest of the
+    identity — the camera, the pack's settings, the resolution and the render
+    distance — which would be unreadable spelled out.
+    """
+    seed = world_seed(config)
+    parts = [world_slug(config.render.world)]
+    if seed is not None:
+        parts.append(str(seed))
+    parts += [config.pack_stem, library_identity(config)]
+    return "-".join(parts)
+
+
+def migrate_legacy_build(config: Config, key: str) -> bool:
+    """Move a pre-identity build directory onto its computed key.
+
+    Older libraries were keyed on the shaderpack alone. Renaming is only safe
+    when the recorded shaderpack settings still match, which is the one part
+    of the identity those libraries did track.
+    """
+    root = config.library.root
+    legacy = root / config.pack_stem
+    target = root / key
+    if not legacy.is_dir() or target.exists():
+        return False
+
+    manifest_path = root / "manifest.json"
+    if not manifest_path.exists():
+        return False
+    recorded = json.loads(manifest_path.read_text()).get("settings_hash")
+    if recorded != shaderpack_identity(config):
+        log.warning(
+            "leaving %s alone: its shaderpack settings (%s) are not the current "
+            "ones, so it was not rendered with this configuration",
+            legacy.name, recorded,
+        )
+        return False
+
+    legacy.rename(target)
+    # The manifest names the directory it describes, so the rename has to
+    # carry it. Leaving the two out of step blinds the display path until
+    # the next full render writes a manifest — and a dry run never does.
+    stored = Manifest.read(root)
+    stored.pack_id = key
+    stored.write(root)
+    log.info("moved %s to %s", legacy.name, target.name)
+    return True
+
+
 class StaleLibrary(Exception):
     """The library on disk was rendered with different shaderpack settings."""
 
@@ -178,11 +279,27 @@ def build_plan(config: Config, settings_hash: str = "", rebuild: bool = False) -
     With ``rebuild`` every cell counts as missing, whatever is on disk.
     """
     root = config.library.root
+    key = pack_id(config)
+    migrate_legacy_build(config, key)
+
     manifest_path = root / "manifest.json"
+    manifest = None
     if manifest_path.exists():
-        manifest = Manifest.read(root)
-    else:
-        manifest = Manifest.from_config(config, settings_hash or shaderpack_identity(config))
+        stored = Manifest.read(root)
+        # A manifest describes one build. If the configuration now points at a
+        # different one, start fresh rather than measuring the new build
+        # against the old build's images.
+        if stored.pack_id == key:
+            manifest = stored
+        else:
+            log.info("configuration changed: %s -> %s", stored.pack_id, key)
+    if manifest is None:
+        manifest = Manifest.from_config(
+            config,
+            settings_hash or shaderpack_identity(config),
+            pack_id=key,
+            camera=render_camera(config),
+        )
 
     library = Library(root, manifest)
     library.rescan()
@@ -223,7 +340,7 @@ def write_batch(config: Config, jobs: list[dict], staging: Path) -> Path:
         for job in jobs:
             handle.write(json.dumps(job) + "\n")
 
-    x, y, z, yaw, pitch = config.render.camera
+    x, y, z, yaw, pitch = render_camera(config)
     run = {
         "output_root": str(staging),
         "warmup_frames": config.render.warmup_frames,

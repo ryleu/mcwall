@@ -3,8 +3,13 @@
 Layout::
 
     <root>/manifest.json
-    <root>/<pack-id>/<sub-season>/<weather>/<tick>.webp
-    <root>/<pack-id>/loops/<sub-season>/<weather>/<tick>.mp4
+    <root>/<build-id>/<sub-season>/<weather>/<tick>.webp
+    <root>/<build-id>/loops/<sub-season>/<weather>/<tick>.mp4
+
+The build id names what produced the images — world, seed, shaderpack, and a
+hash of everything else that changes what they look like — so two builds can
+sit side by side without colliding. The display path treats it as an opaque
+directory name and reads it out of the manifest.
 
 Nothing in here knows about Hyprland, Prism or the local machine, so a mode 2
 producer on another host can write the same shape and the display path will
@@ -66,13 +71,21 @@ class Manifest:
     # reproducible starting point.
     world: str | None = None
     seed: int | None = None
+    camera: list[float] | None = None
+    render_distance: int | None = None
     loop_ticks: list[int] = field(default_factory=list)
     notes: dict = field(default_factory=dict)
 
     @classmethod
-    def from_config(cls, config, settings_hash: str = "") -> "Manifest":
+    def from_config(
+        cls,
+        config,
+        settings_hash: str = "",
+        pack_id: str | None = None,
+        camera: tuple | None = None,
+    ) -> "Manifest":
         return cls(
-            pack_id=config.pack_id,
+            pack_id=pack_id or config.pack_stem,
             pack_name=config.render.shaderpack,
             settings_hash=settings_hash,
             width=config.library.width,
@@ -81,6 +94,8 @@ class Manifest:
             sub_seasons=[s.key for s in SubSeason.all()],
             weathers=[Weather(w).value for w in config.library.weathers],
             ticks=config.ticks(),
+            camera=list(camera) if camera else None,
+            render_distance=config.render.render_distance,
         )
 
     def cells(self) -> list[GridCell]:
