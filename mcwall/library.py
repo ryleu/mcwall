@@ -19,12 +19,15 @@ read it unchanged.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, field
+import logging
+from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .grid import Weather
 from .seasons import SubSeason
+
+log = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 1
 MANIFEST_NAME = "manifest.json"
@@ -122,7 +125,22 @@ class Manifest:
         data.pop("written_at", None)
         if data.get("schema") != SCHEMA_VERSION:
             raise ValueError(f"unsupported library schema {data.get('schema')}")
-        return cls(**data)
+
+        # Fields get added to this dataclass as builds learn to record more
+        # about themselves. Those additions are descriptive, not structural,
+        # so a reader that predates them can still find every image — but
+        # `cls(**data)` would reject them outright, and a display path that
+        # dies on a field it does not need is the worse failure. Drop what we
+        # do not recognise and say so once.
+        known = {f.name for f in fields(cls)}
+        unknown = sorted(set(data) - known)
+        if unknown:
+            log.warning(
+                "ignoring manifest fields this build does not know: %s "
+                "(the library was written by a newer mcwall)",
+                ", ".join(unknown),
+            )
+        return cls(**{k: v for k, v in data.items() if k in known})
 
 
 class Library:

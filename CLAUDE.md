@@ -70,6 +70,16 @@ care about. `cmd | head` hides the exit code of `cmd`.
   relative to the source tree, so `PYTHONPATH=. python3 -m mcwall.cli` worked
   and the built binary could never render — and the built one is what the unit
   runs. Test `nix build` output, not just the working copy.
+- **It is not even this machine's checkout.** `/etc/nixos/flake.nix` pins
+  `github:ryleu/mcwall` at a revision, so the unit runs whatever was last
+  *pushed and locked*. A commit here changes nothing until push, `nix flake
+  update mcwall` and a rebuild. Adding a manifest field broke every timer tick
+  for 40 minutes this way, while the checkout passed every test.
+- **The library format has two readers of different ages.** The producer
+  writes it from the checkout; the display path reads it from the pinned
+  build. `Manifest.read` therefore drops fields it does not recognise and
+  warns, because provenance a reader does not need must never take 1,728
+  images offline.
 - **Check home-manager's modules before adding options.** There is one daemon
   module, `services.awww`; `services.swww.*` are `mkRenamedOptionModule`
   aliases onto it. Detecting "both" would have been detecting one thing twice.

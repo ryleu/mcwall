@@ -100,3 +100,39 @@ def test_manifest_from_config_matches_the_grid():
     assert len(manifest.ticks) == 48
     assert len(manifest.cells()) == 1728
     assert manifest.width == config.library.width
+
+
+def test_a_manifest_from_a_newer_build_still_reads(tmp_path, caplog):
+    """A field this build does not know must not take the library offline.
+
+    The display path only needs the grid and the build id; everything else is
+    provenance. An older reader met a manifest carrying `world` and died with
+    a TypeError, so the wallpaper stopped updating until the reader caught up.
+    """
+    import json
+
+    from mcwall.library import MANIFEST_NAME, Manifest
+
+    payload = {
+        "pack_id": "b",
+        "pack_name": "p.zip",
+        "settings_hash": "h",
+        "width": 2880,
+        "height": 1800,
+        "image_format": "webp",
+        "sub_seasons": ["mid_autumn"],
+        "weathers": ["clear"],
+        "ticks": [7767],
+        "mode": 1,
+        "schema": 1,
+        "rendered_at": None,
+        "loop_ticks": [],
+        "notes": {},
+        "a_field_from_the_future": {"nested": True},
+    }
+    (tmp_path / MANIFEST_NAME).write_text(json.dumps(payload))
+
+    manifest = Manifest.read(tmp_path)
+    assert manifest.pack_id == "b"
+    assert manifest.cells(), "the grid survived"
+    assert "a_field_from_the_future" in caplog.text, "dropped silently"
