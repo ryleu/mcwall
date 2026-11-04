@@ -53,8 +53,18 @@
           runHook postCheck
         '';
         # Tools the orchestrator shells out to at render and display time.
+        # prismlauncher is deliberately absent: the render drives the user's
+        # own authenticated launcher, found on PATH, and shadowing it with a
+        # second copy is exactly what this project promises not to do.
         makeWrapperArgs = [
-          "--prefix" "PATH" ":" (pkgs.lib.makeBinPath [ pkgs.ffmpeg pkgs.libwebp ])
+          "--prefix" "PATH" ":" (pkgs.lib.makeBinPath [
+            pkgs.cage        # headless Wayland session for the capture run
+            pkgs.wlr-randr   # sizes that session to the capture resolution
+            pkgs.ffmpeg      # debanding, and the fallback encoder
+            pkgs.libwebp     # cwebp, the preferred encoder
+            pkgs.mpvpaper    # loop playback on the display path
+            pkgs.procps      # pkill, used to drop a running mpvpaper
+          ])
         ];
       };
     in

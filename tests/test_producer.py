@@ -438,6 +438,8 @@ def test_rendering_without_the_capture_mod_fails_fast(config, monkeypatch):
     monkeypatch.setattr(
         producer, "read_power", lambda: power.PowerState(on_ac=True, percent=100)
     )
+    # Whether this host has cage or prismlauncher is not what is under test.
+    monkeypatch.setattr(producer, "missing_render_tools", lambda *a, **k: [])
 
     # Nothing past the preflight may run during this test.
     class Launched(Exception):
@@ -635,3 +637,40 @@ def test_a_resumed_run_keeps_the_build_its_own_record(config):
     plan = producer.build_plan(config)
     assert plan.manifest.rendered_at == "2026-11-04T12:00:00+00:00"
     assert plan.manifest.settings_hash == "the-original-hash"
+
+
+def test_missing_programs_are_named_before_the_game_starts(config, monkeypatch):
+    """`cage` absent surfaced as a bare FileNotFoundError from inside Popen.
+
+    It appeared minutes in, under a traceback through subprocess, on a command
+    that had already printed "1626 jobs queued" and looked healthy.
+    """
+    from mcwall import power, producer
+
+    present = {"prismlauncher", "cage", "wlr-randr", "ffmpeg", "cwebp"}
+    monkeypatch.setattr(
+        producer.shutil, "which", lambda name: name if name in present else None
+    )
+    assert producer.missing_render_tools(config) == []
+
+    present.discard("cage")
+    assert producer.missing_render_tools(config) == ["cage"]
+    # A windowed run needs no headless session, so cage is not required.
+    assert "cage" not in producer.missing_render_tools(config, headless=False)
+
+    present.discard("prismlauncher")
+    assert set(producer.missing_render_tools(config)) == {"prismlauncher", "cage"}
+
+    # And the run refuses, naming them, rather than launching anything.
+    (producer.game_dir(config) / "mods").mkdir(parents=True, exist_ok=True)
+    (producer.game_dir(config) / "mods" / "mcwall-capture-0.1.0.jar").write_bytes(b"")
+    monkeypatch.setattr(producer, "running_clients", lambda _c: [])
+    monkeypatch.setattr(
+        producer, "read_power", lambda: power.PowerState(on_ac=True, percent=100)
+    )
+    monkeypatch.setattr(
+        producer, "ensure_world_variants",
+        lambda *a, **k: pytest.fail("the run started without its tools"),
+    )
+    with pytest.raises(producer.RenderError, match="cage"):
+        producer.run_jobs(config, [], config.library.root / ".staging")

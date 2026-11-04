@@ -687,6 +687,14 @@ def run_jobs(
             "nothing.\nRun `mcwall setup` to install it."
         )
 
+    missing_tools = missing_render_tools(config, headless)
+    if missing_tools:
+        raise RenderError(
+            "these programs are not on PATH: " + ", ".join(missing_tools) + ".\n"
+            "mcwall carries its own copies of the capture and encoding tools; "
+            "prismlauncher is yours and has to be installed."
+        )
+
     ensure_world_variants(config, jobs)
 
     staging.mkdir(parents=True, exist_ok=True)
@@ -748,6 +756,23 @@ def convert_one(config: Config, png: Path, staging: Path) -> bool:
     temporary.replace(target)
     png.unlink()
     return True
+
+
+def missing_render_tools(config: Config, headless: bool = True) -> list[str]:
+    """Which programs a render needs and cannot find.
+
+    Worth checking before the game starts rather than after: `cage` missing
+    surfaces as a bare FileNotFoundError from deep inside Popen, minutes into
+    a command that looked like it was working.
+    """
+    needed = ["prismlauncher"]
+    if headless:
+        needed += ["cage", "wlr-randr"]
+    if config.library.deband:
+        needed += ["ffmpeg", "cwebp"]
+    elif not shutil.which("cwebp"):
+        needed.append("ffmpeg")  # the fallback encoder
+    return [name for name in dict.fromkeys(needed) if not shutil.which(name)]
 
 
 def background_workers() -> int:

@@ -203,6 +203,18 @@ run finished.
 A resumed run reads that per-build manifest back, so `rendered_at` and the
 recorded settings hash survive being interrupted.
 
+## What the package carries, and what it does not
+
+The wrapper puts `cage`, `wlr-randr`, `ffmpeg`, `cwebp`, `mpvpaper` and
+`pkill` on `PATH`: mcwall shells out to all of them, and a devShell that
+happens to provide them hides their absence from every test. `prismlauncher`
+is deliberately left out — the render drives the user's own authenticated
+launcher, and a second copy in mcwall's closure could shadow it.
+
+`missing_render_tools` checks the lot before the game starts, because a
+missing binary otherwise surfaces as a bare `FileNotFoundError` from inside
+`subprocess.Popen`, on a command that has already reported its job count.
+
 ## The wallpaper daemon
 
 `mcwall apply` fails rather than starting a daemon. `mcwall.service` is a

@@ -75,6 +75,15 @@ care about. `cmd | head` hides the exit code of `cmd`.
   *pushed and locked*. A commit here changes nothing until push, `nix flake
   update mcwall` and a rebuild. Adding a manifest field broke every timer tick
   for 40 minutes this way, while the checkout passed every test.
+- **The devShell hides every runtime dependency.** `cage`, `wlr-randr`,
+  `mpvpaper` and `pkill` are on `PATH` while developing, so nothing shells
+  out in vain — and none of them were in the package's closure. A render
+  started from the installed binary died with `FileNotFoundError: 'cage'`
+  from inside `Popen`, after printing "1626 jobs queued". The wrapper now
+  carries the tools mcwall owns; `prismlauncher` stays the user's, because
+  shadowing their authenticated launcher is the one thing this project
+  promises not to do. `missing_render_tools` names whatever is absent before
+  the game starts.
 - **`sys.executable` is not your interpreter.** Installed by nix, `mcwall` is
   a bash wrapper and `sys.executable` underneath it is the bare python, which
   cannot import mcwall at all. The TUI spawned `sys.executable -m mcwall.cli`
