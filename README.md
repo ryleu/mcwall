@@ -96,6 +96,16 @@ way, and `--no-save` reports without writing.
 Your in-game video settings survive: `setup_instance.py` will not overwrite an
 existing `options.txt` unless you pass `--force`.
 
+The seed comes from the world, not from config. Create a world in-game with
+whatever seed you like and `mcwall edit` adopts it; the library's manifest
+records the world name and its seed so a build can be traced back.
+
+Winter renders in a snow-covered variant, and that variant is a **copy** of
+the base world rather than a fresh generation. Generating it would only match
+if both used the same seed, which stops being true the moment a world is made
+by hand — and a quarter of the library showing different terrain is the kind
+of mistake you find months later.
+
 `mcwall scout` still exists for sweeping a grid of candidate heights and
 headings, if you would rather compare renders than fly around.
 

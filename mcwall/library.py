@@ -62,6 +62,10 @@ class Manifest:
     mode: int = 1
     schema: int = SCHEMA_VERSION
     rendered_at: str | None = None
+    # Which world the images came from, so a library can be traced back to a
+    # reproducible starting point.
+    world: str | None = None
+    seed: int | None = None
     loop_ticks: list[int] = field(default_factory=list)
     notes: dict = field(default_factory=dict)
 

@@ -87,6 +87,55 @@ def read_camera(world: Path) -> Camera:
     )
 
 
+def read_seed(world: Path) -> int | None:
+    """The world's generation seed, from ``Data.WorldGenSettings.seed``."""
+    import nbtlib
+
+    level = world / "level.dat"
+    if not level.exists():
+        return None
+    settings = nbtlib.load(level)["Data"].get("WorldGenSettings")
+    if settings is None or "seed" not in settings:
+        return None
+    return int(settings["seed"])
+
+
+def rename_level(world: Path, name: str) -> None:
+    """Set a save's LevelName tag to match its directory.
+
+    The mod identifies the loaded world by `getWorldData().getLevelName()`,
+    which reads this tag rather than the directory. A copied save would keep
+    the original's name and never match the job asking for it, so the batch
+    would switch worlds forever.
+    """
+    import nbtlib
+
+    level = world / "level.dat"
+    with nbtlib.load(level) as handle:
+        handle["Data"]["LevelName"] = nbtlib.String(name)
+
+
+def derive_world(source: Path, target: Path) -> Path:
+    """Copy a save, so the copy generates identical terrain.
+
+    The winter grid renders in a snow-covered variant. Generating it fresh
+    would only match the base world if both used the same seed, which stops
+    being true the moment a world is created by hand — and the mismatch is
+    invisible until a quarter of the library shows a different landscape.
+    Copying sidesteps the seed entirely, and carries over anything built.
+    """
+    import shutil
+
+    if target.exists():
+        return target
+    shutil.copytree(
+        source, target, ignore=shutil.ignore_patterns("session.lock", "*.lock")
+    )
+    rename_level(target, target.name)
+    log.info("derived %s from %s", target.name, source.name)
+    return target
+
+
 def stash_jobs(state: Path) -> bool:
     """Move the job manifest aside so the mod idles while a person plays.
 

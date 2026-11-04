@@ -238,9 +238,20 @@ public final class BatchRunner {
             if (minecraft.getLevelSource().levelExists(world)) {
                 minecraft.createWorldOpenFlows().openWorld(world, () ->
                         LOGGER.error("mcwall: could not open world '{}'", world));
-            } else {
+            } else if (world.equals(config.baseWorld) || config.baseWorld.isEmpty()) {
                 LOGGER.info("mcwall: creating template world '{}'", world);
                 WorldTemplate.create(minecraft, world);
+            } else {
+                // Variants are copies of the base world, made by the
+                // orchestrator. Generating one here would use this mod's own
+                // seed, and terrain that silently disagrees with the rest of
+                // the library is worse than a failed job.
+                LOGGER.error("mcwall: world '{}' is missing and is not the base world "
+                        + "'{}'; the orchestrator derives variants by copying, so rerun "
+                        + "the render rather than generating it here",
+                        world, config.baseWorld);
+                failed++;
+                nextJob(minecraft);
             }
             return;
         }

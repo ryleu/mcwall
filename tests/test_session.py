@@ -71,3 +71,52 @@ def test_jobs_are_stashed_so_the_mod_stays_idle(tmp_path):
 def test_stashing_nothing_is_harmless(tmp_path):
     assert session.stash_jobs(tmp_path) is False
     session.restore_jobs(tmp_path)
+
+
+def test_derived_world_keeps_the_seed_and_gets_its_own_name(tmp_path):
+    """A variant must generate the same terrain as the world it came from."""
+    import nbtlib
+
+    source = tmp_path / "base"
+    source.mkdir()
+    nbtlib.File(
+        {
+            "Data": nbtlib.Compound(
+                {
+                    "LevelName": nbtlib.String("base"),
+                    "WorldGenSettings": nbtlib.Compound({"seed": nbtlib.Long(123456789)}),
+                    "Player": nbtlib.Compound(
+                        {
+                            "Pos": nbtlib.List[nbtlib.Double]([nbtlib.Double(1.0)] * 3),
+                            "Rotation": nbtlib.List[nbtlib.Float]([nbtlib.Float(0.0)] * 2),
+                        }
+                    ),
+                }
+            )
+        }
+    ).save(source / "level.dat", gzipped=True)
+    (source / "region").mkdir()
+    (source / "region" / "r.0.0.mca").write_bytes(b"terrain")
+    (source / "session.lock").write_bytes(b"lock")
+
+    target = session.derive_world(source, tmp_path / "base-snow")
+
+    assert session.read_seed(target) == session.read_seed(source) == 123456789
+    assert (target / "region" / "r.0.0.mca").read_bytes() == b"terrain"
+    # The mod matches the loaded world by LevelName, not by directory, so a
+    # copy that kept the old name would never satisfy the job asking for it.
+    assert str(nbtlib.load(target / "level.dat")["Data"]["LevelName"]) == "base-snow"
+    assert not (target / "session.lock").exists()
+
+
+def test_deriving_an_existing_world_leaves_it_alone(tmp_path):
+    source = write_level(tmp_path / "base")
+    target = write_level(tmp_path / "base-snow", pos=(9.0, 9.0, 9.0))
+    session.derive_world(source, target)
+    assert session.read_camera(target).x == 9.0, "an existing variant was overwritten"
+
+
+def test_seed_of_a_world_without_one(tmp_path):
+    world = write_level(tmp_path / "w")
+    assert session.read_seed(world) is None
+    assert session.read_seed(tmp_path / "nope") is None

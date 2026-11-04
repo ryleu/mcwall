@@ -236,6 +236,7 @@ def write_batch(config: Config, jobs: list[dict], staging: Path) -> Path:
         "snow_soak_ticks": config.render.snow_soak_ticks,
         "snow_random_tick_speed": config.render.snow_random_tick_speed,
         "snow_season": config.render.snow_season,
+        "base_world": config.render.world,
         "camera": {"x": x, "y": y, "z": z, "yaw": yaw, "pitch": pitch},
     }
     if config.render.locate_biome:
@@ -245,6 +246,40 @@ def write_batch(config: Config, jobs: list[dict], staging: Path) -> Path:
         }
     (state / "run.json").write_text(json.dumps(run, indent=2))
     return state
+
+
+def ensure_world_variants(config: Config, jobs: list[dict]) -> None:
+    """Make every world a job names exist, before the client looks for it.
+
+    A variant is a copy of the base world rather than a fresh generation, so
+    its terrain matches whatever seed the base world was created with. The
+    copy happens here, with no client running, because a save cannot safely be
+    duplicated underneath a loaded world.
+    """
+    from . import session
+
+    saves = session.saves_dir(game_dir(config))
+    base = saves / config.render.world
+    wanted = {job["world"] for job in jobs} - {config.render.world}
+
+    for name in sorted(wanted):
+        target = saves / name
+        if target.exists():
+            continue
+        if not base.exists():
+            # The base world does not exist yet either; the mod creates it on
+            # first run and the variant is derived on the next.
+            log.warning("cannot derive %s: %s does not exist yet", name, base.name)
+            continue
+        log.info("deriving %s from %s so the terrain matches", name, base.name)
+        session.derive_world(base, target)
+
+
+def world_seed(config: Config) -> int | None:
+    """The seed of the render world, read from its save."""
+    from . import session
+
+    return session.read_seed(session.saves_dir(game_dir(config)) / config.render.world)
 
 
 def located_spot(config: Config) -> dict | None:
@@ -500,6 +535,8 @@ def run_jobs(
             f"It holds the world lock and is reading the old job manifest. "
             f"Stop it first: kill {' '.join(map(str, stray))}"
         )
+
+    ensure_world_variants(config, jobs)
 
     staging.mkdir(parents=True, exist_ok=True)
     state = write_batch(config, jobs, staging)

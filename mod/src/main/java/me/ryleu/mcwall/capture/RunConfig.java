@@ -28,6 +28,10 @@ public final class RunConfig {
     public final int snowRandomTickSpeed;
     /** Sub-season to soak under, which must be a winter one. */
     public final String snowSeason;
+    /** The one world this batch may create. Variants are copies, made by the
+     * orchestrator, so that their terrain matches whatever seed the base world
+     * was built with. */
+    public final String baseWorld;
     /** Biome ids to anchor the camera in, or empty to use the camera as given. */
     public final java.util.List<String> locateBiome;
     public final int locateRadius;
@@ -45,6 +49,7 @@ public final class RunConfig {
         this.snowSoakTicks = optInt(json, "snow_soak_ticks", 2400);
         this.snowRandomTickSpeed = optInt(json, "snow_random_tick_speed", 120);
         this.snowSeason = optString(json, "snow_season", "mid_winter");
+        this.baseWorld = optString(json, "base_world", "");
 
         java.util.List<String> biomes = new java.util.ArrayList<>();
         if (json.has("locate_biome")) {

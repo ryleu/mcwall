@@ -126,6 +126,8 @@ def cmd_render(args) -> int:
     # Stamp the identity on a library that predates the check, so the next
     # settings change is caught.
     plan.manifest.settings_hash = plan.manifest.settings_hash or identity
+    plan.manifest.world = config.render.world
+    plan.manifest.seed = producer.world_seed(config)
     plan.manifest.write(config.library.root)
 
     staging = config.library.root / ".staging"
