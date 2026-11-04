@@ -69,12 +69,35 @@ launcher profiles are not touched.
 ## Building the library
 
 ```sh
-mcwall scout                 # render camera candidates, pick one by looking
+mcwall edit                  # open the game, set the shot, quit — camera adopted
 mcwall probe --write         # place the 48 time slots by measured sky change
 mcwall plan                  # what is missing
 mcwall render                # one headless game run fills it
 mcwall verify --decode       # every cell present and decodable
 ```
+
+### Setting the shot
+
+`mcwall edit` opens the render instance as an ordinary game. Fly where you
+like, set the framing, tune the shaderpack in Iris's options, then quit. On
+exit the camera is read back out of the world's `level.dat` and written to
+config — Minecraft saves the player's position and rotation on quit, so
+nothing has to be captured live.
+
+It also stashes any leftover job manifest first. Without that, opening the
+instance by hand makes the capture mod replay the last batch and quit the game
+out from under you.
+
+Adopting a camera sets `locate_biome = []`, because the biome search replaces
+x and z and would otherwise discard the framing you just set. `mcwall adopt`
+does the same without opening the game, for when you have played some other
+way, and `--no-save` reports without writing.
+
+Your in-game video settings survive: `setup_instance.py` will not overwrite an
+existing `options.txt` unless you pass `--force`.
+
+`mcwall scout` still exists for sweeping a grid of candidate heights and
+headings, if you would rather compare renders than fly around.
 
 The camera is anchored automatically in a biome whose foliage actually changes
 with the season — `forest`, `flower_forest`, `birch_forest`, `dark_forest`,

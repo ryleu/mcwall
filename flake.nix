@@ -16,6 +16,7 @@
         httpx
         pillow
         tomli-w
+        nbtlib # reads the camera back out of a world's level.dat
       ];
       # Extra deps used only by tests and the tuning tools.
       pythonDevDeps = ps: with ps; [

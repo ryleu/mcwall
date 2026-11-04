@@ -14,7 +14,7 @@ from pathlib import Path
 from . import apply as apply_mod
 from . import config as config_mod
 from . import deband as deband_mod
-from . import producer, scout, weather
+from . import producer, scout, session, weather
 from .grid import Weather
 from .library import Library, Manifest
 from .seasons import SubSeason
@@ -227,6 +227,92 @@ def cmd_apply(args) -> int:
     return 0
 
 
+def _adopt(config, world_dir, save: bool) -> int:
+    """Report the camera a world was left at, and optionally keep it."""
+    camera = session.read_camera(world_dir)
+    print(f"world:  {world_dir.name}")
+    print(f"camera: {camera}")
+
+    if not save:
+        print("\n--no-save: config untouched")
+        return 0
+
+    values = {
+        "camera": list(camera.as_tuple()),
+        "world": world_dir.name,
+        # An explicit camera and the biome search cannot both win. The search
+        # replaces x and z, which would silently discard the framing that was
+        # just set by hand.
+        "locate_biome": [],
+    }
+    path = config_mod.update("render", values)
+    print(f"\nsaved to {path}")
+    print("  render.camera       =", values["camera"])
+    print("  render.world        =", values["world"])
+    print("  render.locate_biome = []  (so the biome search cannot move it)")
+
+    if world_dir.name != config.render.world:
+        print(f"\nnote: the render world changed to {world_dir.name!r}.")
+        print("      winter needs its snow variant rebuilt:")
+        print(f"        rm -rf {session.saves_dir(producer.game_dir(config))}/{world_dir.name}-snow")
+    print("\nexisting images were rendered from the old camera; `mcwall plan`")
+    print("will still call them present. Use `mcwall render --rebuild` to redo them.")
+    return 0
+
+
+def cmd_edit(args) -> int:
+    """Open the render instance as a normal game to set up the shot."""
+    config = _load()
+    state = producer.game_dir(config) / producer.STATE_SUBDIR
+
+    stray = producer.running_clients(config)
+    if stray:
+        raise SystemExit(
+            f"a game is already running for this instance (pid "
+            f"{', '.join(map(str, stray))}); close it first"
+        )
+
+    # Without this the mod finds the last batch and starts capturing over the
+    # top of whoever is trying to set up the shot.
+    if session.stash_jobs(state):
+        print("stashed the previous job manifest so the capture mod stays idle")
+
+    print("opening the instance — fly to a spot, set your framing, then quit.")
+    process = producer.launch(config, state, headless=False)
+    process.wait()
+    producer.kill_clients(config)
+
+    world_dir = (
+        session.saves_dir(producer.game_dir(config)) / args.world
+        if args.world
+        else session.latest_world(producer.game_dir(config))
+    )
+    if world_dir is None or not world_dir.exists():
+        raise SystemExit("no world was played; nothing to adopt")
+
+    print()
+    try:
+        return _adopt(config, world_dir, save=not args.no_save)
+    except session.NoPlayerPosition as error:
+        raise SystemExit(str(error))
+
+
+def cmd_adopt(args) -> int:
+    """Take the camera from a world without opening the game."""
+    config = _load()
+    world_dir = (
+        session.saves_dir(producer.game_dir(config)) / args.world
+        if args.world
+        else session.latest_world(producer.game_dir(config))
+    )
+    if world_dir is None or not world_dir.exists():
+        raise SystemExit("no world found in the render instance")
+    try:
+        return _adopt(config, world_dir, save=not args.no_save)
+    except session.NoPlayerPosition as error:
+        raise SystemExit(str(error))
+
+
 def cmd_scout(args) -> int:
     """Render candidate camera spots and tile them for a human to choose."""
     config = _load()
@@ -426,6 +512,20 @@ def main(argv: list[str] | None = None) -> int:
     apply_parser = subparsers.add_parser("apply", help="select, then set the wallpaper")
     apply_parser.add_argument("--force", action="store_true")
     apply_parser.set_defaults(func=cmd_apply)
+
+    edit = subparsers.add_parser(
+        "edit", help="open the instance to set the shot, then adopt the camera"
+    )
+    edit.add_argument("--world", help="which save to adopt from (default: last played)")
+    edit.add_argument("--no-save", action="store_true", help="report, do not write config")
+    edit.set_defaults(func=cmd_edit)
+
+    adopt = subparsers.add_parser(
+        "adopt", help="take the camera from a world without opening the game"
+    )
+    adopt.add_argument("--world")
+    adopt.add_argument("--no-save", action="store_true")
+    adopt.set_defaults(func=cmd_adopt)
 
     scout_parser = subparsers.add_parser("scout", help="render camera candidates to choose from")
     scout_parser.add_argument("--tick", type=int, default=1000)

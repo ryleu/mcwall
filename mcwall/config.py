@@ -192,8 +192,8 @@ def load(path: Path | None = None) -> Config:
     return config
 
 
-def save_location(latitude: float, longitude: float, source: str) -> None:
-    """Persist a detected or supplied location into the user config."""
+def update(section: str, values: dict[str, Any]) -> Path:
+    """Merge values into one section of the user config, atomically."""
     import tomli_w
 
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -201,10 +201,14 @@ def save_location(latitude: float, longitude: float, source: str) -> None:
     if CONFIG_PATH.exists():
         with CONFIG_PATH.open("rb") as handle:
             raw = tomllib.load(handle)
-    raw.setdefault("location", {}).update(
-        {"latitude": latitude, "longitude": longitude, "source": source}
-    )
+    raw.setdefault(section, {}).update(values)
     tmp = CONFIG_PATH.with_suffix(".toml.tmp")
     with tmp.open("wb") as handle:
         tomli_w.dump(raw, handle)
     tmp.replace(CONFIG_PATH)
+    return CONFIG_PATH
+
+
+def save_location(latitude: float, longitude: float, source: str) -> None:
+    """Persist a detected or supplied location into the user config."""
+    update("location", {"latitude": latitude, "longitude": longitude, "source": source})

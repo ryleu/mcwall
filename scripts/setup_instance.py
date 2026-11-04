@@ -245,9 +245,15 @@ def main() -> int:
         shaderpack = entry["filename"]
         print(f"{'downloaded' if changed else 'present   '} {entry['filename']}")
 
-    (game / "options.txt").write_text(
-        OPTIONS_TXT.format(render_distance=args.render_distance)
-    )
+    # Leave options.txt alone once it exists: `mcwall edit` exists so the
+    # framing and video settings can be tuned in-game, and rewriting the file
+    # would throw that away on the next setup run.
+    options = game / "options.txt"
+    if args.force or not options.exists():
+        options.write_text(OPTIONS_TXT.format(render_distance=args.render_distance))
+        print("wrote       options.txt")
+    else:
+        print("kept        options.txt (use --force to reset it)")
 
     # Leave iris.properties alone once it already selects the right pack with
     # shaders on. Iris fills in its own defaults when the game exits, and
