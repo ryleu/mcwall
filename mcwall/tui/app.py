@@ -13,6 +13,7 @@ without unwinding our own stack.
 from __future__ import annotations
 
 import curses
+import os
 import shutil
 import subprocess
 import sys
@@ -126,6 +127,28 @@ def gather(config, jobs_cache: dict) -> Snapshot:
 # -------------------------------------------------------------------- runner
 
 
+def child_environment() -> dict:
+    """Hand a child process the imports this one already has.
+
+    Installed by nix, `mcwall` is a wrapper script and `sys.executable` is the
+    bare interpreter underneath it, which cannot import mcwall at all — so
+    spawning `sys.executable -m mcwall.cli` failed with ModuleNotFoundError
+    while the very process doing the spawning was running from that package.
+
+    This process can import everything it needs by definition, so pass on its
+    own search path rather than assuming the child's interpreter is set up the
+    same way.
+    """
+    environment = dict(os.environ)
+    paths = [entry for entry in sys.path if entry]
+    existing = environment.get("PYTHONPATH")
+    if existing:
+        paths.extend(existing.split(os.pathsep))
+    # dict.fromkeys keeps the first occurrence, so our own path wins.
+    environment["PYTHONPATH"] = os.pathsep.join(dict.fromkeys(paths))
+    return environment
+
+
 class Runner:
     """One mcwall command at a time, with its output kept for the log pane."""
 
@@ -151,6 +174,7 @@ class Runner:
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
+            env=child_environment(),
         )
         with self._lock:
             self._process = process

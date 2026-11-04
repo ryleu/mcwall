@@ -75,6 +75,13 @@ care about. `cmd | head` hides the exit code of `cmd`.
   *pushed and locked*. A commit here changes nothing until push, `nix flake
   update mcwall` and a rebuild. Adding a manifest field broke every timer tick
   for 40 minutes this way, while the checkout passed every test.
+- **`sys.executable` is not your interpreter.** Installed by nix, `mcwall` is
+  a bash wrapper and `sys.executable` underneath it is the bare python, which
+  cannot import mcwall at all. The TUI spawned `sys.executable -m mcwall.cli`
+  and every command died with ModuleNotFoundError — from inside a process
+  that had imported the package to get there. A child gets `sys.path` handed
+  to it explicitly now. It worked perfectly in the devShell, where the two
+  interpreters happen to agree.
 - **An untracked file is not in the flake either.** `nix build` on a git
   repository takes tracked files only, so a brand-new module passes every
   test in the devShell and is simply absent from the built package —

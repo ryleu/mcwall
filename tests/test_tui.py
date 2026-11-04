@@ -270,3 +270,35 @@ def test_the_window_opens_draws_every_view_and_quits(tmp_path):
 
     assert "Traceback" not in errors, errors
     assert code == 0, f"exit {code}: {errors}"
+
+
+def test_a_spawned_command_can_import_mcwall(tmp_path):
+    """The child must not depend on its interpreter being set up for mcwall.
+
+    Installed by nix, `mcwall` is a wrapper script and `sys.executable` is the
+    bare interpreter underneath, which cannot import the package — so every
+    command launched from the TUI died with ModuleNotFoundError while the TUI
+    itself was running from that same package. Running from a directory that
+    contains no mcwall, with no PYTHONPATH of its own, reproduces that shape.
+    """
+    import os
+    import subprocess
+
+    from mcwall.tui.app import child_environment
+
+    stripped = dict(os.environ)
+    stripped.pop("PYTHONPATH", None)
+    bare = subprocess.run(
+        [sys.executable, "-m", "mcwall.cli", "--help"],
+        cwd=tmp_path, env=stripped, capture_output=True, text=True,
+    )
+    fixed = subprocess.run(
+        [sys.executable, "-m", "mcwall.cli", "--help"],
+        cwd=tmp_path, env=child_environment(), capture_output=True, text=True,
+    )
+
+    assert fixed.returncode == 0, fixed.stderr
+    assert "usage: mcwall" in fixed.stdout
+    if bare.returncode != 0:
+        # The interesting case: the plain environment genuinely cannot do it.
+        assert "No module named" in bare.stderr
