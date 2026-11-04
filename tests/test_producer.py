@@ -1,6 +1,8 @@
 """Planning and job ordering — the parts of the producer with no game in them."""
 
 import json
+import os
+import time
 from dataclasses import replace
 
 import pytest
@@ -478,3 +480,89 @@ def test_dry_run_leaves_the_active_library_alone(config, monkeypatch, capsys):
     assert cli.main(["render", "--dry-run"]) == 0
     assert "jobs queued" in capsys.readouterr().out
     assert Manifest.read(root).pack_id == "the-build-on-screen"
+
+
+def test_converting_mid_run_never_removes_the_live_staging_tree(config):
+    """The game is still writing in there.
+
+    `convert_staging` deletes the tree once it is empty, which is right at
+    the end of a batch and catastrophic during one — an empty moment early in
+    a run is normal, and removing the directory would leave the mod with
+    nowhere to put the next capture.
+    """
+    from mcwall import producer
+
+    staging = config.library.root / ".staging"
+    (staging / "build" / "early_autumn" / "clear").mkdir(parents=True)
+
+    assert producer.convert_available(config, staging) == 0
+    assert staging.is_dir(), "conversion deleted the directory the game writes into"
+
+
+def test_converting_mid_run_picks_up_finished_captures(config, monkeypatch):
+    from mcwall import producer
+
+    staging = config.library.root / ".staging"
+    shot = staging / "build" / "early_autumn" / "clear" / "200.png"
+    shot.parent.mkdir(parents=True)
+    shot.write_bytes(b"not really a png")
+
+    done = []
+
+    def fake_convert(_config, png, _staging):
+        done.append(png.name)
+        png.unlink()
+        return True
+
+    monkeypatch.setattr(producer, "convert_one", fake_convert)
+    assert producer.convert_available(config, staging) == 1
+    assert done == ["200.png"]
+    assert staging.is_dir()
+
+
+def test_one_bad_encode_does_not_end_a_five_hour_run(config, monkeypatch):
+    """It is left for the final sweep to retry, not raised at the game."""
+    from mcwall import producer
+
+    staging = config.library.root / ".staging"
+    staging.mkdir(parents=True)
+    for name in ("good.png", "bad.png"):
+        (staging / name).write_bytes(b"")
+
+    def fake_convert(_config, png, _staging):
+        if png.name == "bad.png":
+            raise RuntimeError("cwebp fell over")
+        return True
+
+    monkeypatch.setattr(producer, "convert_one", fake_convert)
+    assert producer.convert_available(config, staging) == 1
+    assert (staging / "bad.png").exists(), "the retry source was thrown away"
+
+
+def test_the_background_converter_runs_and_stops(config, monkeypatch):
+    from mcwall import producer
+
+    staging = config.library.root / ".staging"
+    staging.mkdir(parents=True)
+    calls = []
+    monkeypatch.setattr(
+        producer, "convert_available", lambda *a, **k: calls.append(1) or 1
+    )
+
+    with producer.BackgroundConverter(config, staging, interval=0.01) as converter:
+        deadline = time.monotonic() + 2
+        while not calls and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+    assert calls, "the converter never ran"
+    assert converter.converted >= 1
+    before = len(calls)
+    time.sleep(0.1)
+    assert len(calls) == before, "the thread outlived the run"
+
+
+def test_background_conversion_leaves_cores_for_the_game():
+    from mcwall import producer
+
+    assert producer.background_workers() >= 1
+    assert producer.background_workers() <= max(1, (os.cpu_count() or 2) // 2)

@@ -96,10 +96,19 @@ def nearest_slot(tick: float, ticks: list[int]) -> int:
 # library has. Fog (45-48) renders as clear; snow (71-77, 85-86) renders as
 # rain, which Serene Seasons turns into snowfall in winter sub-seasons.
 def weather_from_wmo(code: int) -> Weather:
-    if 95 <= code <= 99:
+    """Fold a WMO present-weather code onto one of the three skies.
+
+    Overcast counts as rain, and so does fog. The library has no cloudy sky
+    to offer, so every code has to become clear, rain or thunder — and the
+    two ways of being wrong are not equal. A grey afternoon shown as bright
+    sunshine reads as broken; rain shown a little early under a solid
+    overcast just reads as weather. Clear therefore keeps only 0-2: clear
+    sky, mainly clear, and partly cloudy.
+    """
+    if not 0 <= code <= 99:
+        raise ValueError(f"unknown WMO weather code {code}")
+    if code >= 95:
         return Weather.THUNDER
-    if 51 <= code <= 67 or 71 <= code <= 77 or 80 <= code <= 86:
-        return Weather.RAIN
-    if 0 <= code <= 48:
+    if code <= 2:
         return Weather.CLEAR
-    raise ValueError(f"unknown WMO weather code {code}")
+    return Weather.RAIN

@@ -175,6 +175,12 @@ landed in a dry gap between two showers while it was raining outside. An
 instantaneous categorical code does not mean what a person means by "it is
 raining", and it makes the wallpaper flicker between skies.
 
+**Overcast counts as rain, and so does fog.** The grid has three skies and no
+cloudy one, so every code becomes clear, rain or thunder — and the two ways of
+being wrong are not equal. A grey afternoon rendered as bright sunshine reads
+as broken; rain under a solid overcast reads as weather. Clear keeps WMO 0-2
+(clear, mainly clear, partly cloudy); 3-94 is rain; 95-99 is thunder.
+
 So the weather is the most notable sky in the last `RAIN_LOOKBACK_MINUTES`
 (30) of the nowcast, which is radar-derived. Spans are stamped with their
 start, so one straddling the cutoff still counts; spans starting after now are
@@ -220,9 +226,16 @@ Two things that make the daemon awkward to probe:
 | Conversion | ~1 s of CPU per image, run across all cores |
 | Display path | 43 ms end to end; 1.7 s wall / 791 ms CPU as a systemd unit |
 
-Conversion happens after the batch, so a full build needs about 16 GB free on
-the way through even though the result is 3.2 GB. An interrupted run leaves
-that backlog until the next `mcwall render` converts it.
+Conversion runs *during* the batch, on half the cores, and sweeps up whatever
+is left when the game quits. The mod writes each frame to `.part` and renames
+it atomically, so a PNG on disk is always whole and converting beside a live
+run is safe. Spreading the work costs the same CPU but keeps staging down to
+whatever the encoder has not caught up with, instead of the ~16 GB a full grid
+used to hold, and leaves almost no tail once the game exits. The other half of
+the cores stays with the game: chunk generation is CPU-bound, and a capture
+waiting on terrain costs eleven seconds while an encode waiting its turn costs
+about one. An interrupted run still leaves its backlog for the next
+`mcwall render`.
 
 ## Deviations from the original plan
 

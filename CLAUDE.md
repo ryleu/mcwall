@@ -215,6 +215,16 @@ buried in `latest.log` and nothing in the mod list to notice unless you look
 for an absence. `run_jobs` now refuses up front if no `mcwall-capture-*.jar`
 is in the instance.
 
+## Two ways of being wrong are rarely equal
+
+Folding weather onto three skies loses information whatever you do, so the
+question is which error is cheaper. Sunshine on a grey afternoon looks broken;
+rain a little early under a solid overcast just looks like weather. Overcast
+and fog are therefore rain, and only WMO 0-2 stay clear.
+
+Worth asking before every lossy mapping: not "which is more accurate" but
+"which mistake will someone notice".
+
 ## A terminal UI can still be tested
 
 Split it: `state` gathers facts, `layout` turns them into lines, `app` is the

@@ -52,7 +52,10 @@ def moment(month=11, day=3, hour=12):
 @pytest.mark.parametrize(
     "code,expected",
     [
-        (0, Weather.CLEAR), (3, Weather.CLEAR), (45, Weather.CLEAR), (48, Weather.CLEAR),
+        (0, Weather.CLEAR), (1, Weather.CLEAR), (2, Weather.CLEAR),
+        # Overcast and fog are rain: the library has no cloudy sky, and
+        # sunshine under a grey sky is the more obviously wrong answer.
+        (3, Weather.RAIN), (45, Weather.RAIN), (48, Weather.RAIN),
         (51, Weather.RAIN), (61, Weather.RAIN), (67, Weather.RAIN),
         (71, Weather.RAIN), (77, Weather.RAIN), (80, Weather.RAIN), (86, Weather.RAIN),
         (95, Weather.THUNDER), (99, Weather.THUNDER),
@@ -65,6 +68,8 @@ def test_wmo_codes_fold_onto_three_states(code, expected):
 def test_unknown_wmo_code_is_an_error():
     with pytest.raises(ValueError):
         weather_from_wmo(120)
+    with pytest.raises(ValueError):
+        weather_from_wmo(-1)
 
 
 # --- slots ---------------------------------------------------------------

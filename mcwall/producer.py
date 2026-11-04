@@ -14,6 +14,7 @@ import logging
 import os
 import shutil
 import subprocess
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -680,7 +681,8 @@ def run_jobs(
     staging.mkdir(parents=True, exist_ok=True)
     state = write_batch(config, jobs, staging)
     process = launch(config, state, headless=headless)
-    status = watch(process, state, config, on_battery_stop=not force)
+    with BackgroundConverter(config, staging):
+        status = watch(process, state, config, on_battery_stop=not force)
 
     if not status:
         raise RenderError(
@@ -735,6 +737,80 @@ def convert_one(config: Config, png: Path, staging: Path) -> bool:
     temporary.replace(target)
     png.unlink()
     return True
+
+
+def background_workers() -> int:
+    """How many cores conversion may use while the game is running.
+
+    Half, because the other half is doing the actual work: chunk generation
+    is CPU-bound, and a capture waiting on terrain costs eleven seconds while
+    an encode waiting its turn costs about one.
+    """
+    return max(1, (os.cpu_count() or 2) // 2)
+
+
+def convert_available(config: Config, staging: Path, workers: int | None = None) -> int:
+    """Convert the captures that are finished, leaving the tree in place.
+
+    Safe to run against a live batch: the mod writes each frame to `.part`
+    and atomically renames it, so every `.png` on disk is whole.
+
+    Unlike `convert_staging` this never deletes the directory the game is
+    writing into, and it logs a failed image instead of raising — the final
+    sweep retries it, and one bad encode must not end a five-hour run.
+    """
+    pngs = sorted(staging.rglob("*.png"))
+    if not pngs:
+        return 0
+
+    workers = workers or background_workers()
+    converted = 0
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(convert_one, config, png, staging): png for png in pngs}
+        for future in as_completed(futures):
+            try:
+                if future.result():
+                    converted += 1
+            except Exception as error:  # noqa: BLE001 - the final sweep retries
+                log.warning("deferring %s: %s", futures[future].name, error)
+    return converted
+
+
+class BackgroundConverter:
+    """Encode captures as they land, rather than in one tail at the end.
+
+    A batch used to hold every lossless PNG until the game quit — about 16 GB
+    for a full grid — and then spend minutes encoding with the GPU idle. The
+    work is the same either way, but spread across the run it needs a fraction
+    of the disk and leaves almost nothing to do at the end.
+    """
+
+    def __init__(self, config: Config, staging: Path, interval: float = 20.0):
+        self.config = config
+        self.staging = staging
+        self.interval = interval
+        self.converted = 0
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def __enter__(self) -> "BackgroundConverter":
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, *_exception) -> None:
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=120)
+        if self.converted:
+            log.info("converted %s images during the run", self.converted)
+
+    def _loop(self) -> None:
+        while not self._stop.wait(self.interval):
+            try:
+                self.converted += convert_available(self.config, self.staging)
+            except Exception as error:  # noqa: BLE001 - never kill the render
+                log.warning("background conversion paused: %s", error)
 
 
 def convert_staging(config: Config, staging: Path, workers: int | None = None) -> int:

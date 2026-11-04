@@ -1,7 +1,7 @@
 # Testing
 
 ```sh
-nix flake check              # 181 unit tests in a sandbox: no network, no game
+nix flake check              # 188 unit tests in a sandbox: no network, no game
 pytest -q tests              # the same, in the devShell
 pytest -m network            # adds the Skyfield ephemeris cross-check
 mcwall verify --decode       # opens every image in the library
@@ -22,6 +22,7 @@ Everything except the visual review runs without a person watching.
 | Build identity | `tests/test_producer.py` | Passing: seed, camera, resolution and render distance each fork the library; warm-up frames do not. A world never played in refuses to plan rather than rendering spawn. |
 | Adopting an older library | `tests/test_producer.py` | Passing: the rename carries the manifest, and a library built with other shaderpack settings is left where it is. |
 | Slot placement | `tests/test_scout.py` | Passing: slots concentrate where the picture changes, spread evenly when it changes uniformly, and identical frames are rejected rather than guessed at. |
+| Conversion during a run | `tests/test_producer.py` | Passing: converts finished captures, never deletes the live staging tree, defers a failed encode to the final sweep, and the thread stops with the run. |
 | TUI | `tests/test_tui.py` | Passing: progress arithmetic, job neighbours, torn status files, and a pty smoke test that drives every view — verified to fail when the draw is broken. The command list is asserted equal to the CLI's own parser. |
 | Dry run writes nothing | `tests/test_producer.py` | Passing, and verified to fail when the old ordering is restored. |
 | Missing capture mod | `tests/test_producer.py` | Passing: the render refuses before launching rather than timing out. |
