@@ -1,0 +1,13 @@
+/result
+/result-*
+.direnv/
+__pycache__/
+*.pyc
+.pytest_cache/
+/var/
+/library/
+/renders/
+/mod/build/
+/mod/.gradle/
+/mod/run/
+/game/

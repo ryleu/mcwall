@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcwall"
+version = "0.1.0"
+description = "Minecraft-rendered sky wallpaper for Hyprland"
+requires-python = ">=3.11"
+dependencies = ["astral>=3.2", "httpx>=0.27", "pillow>=10", "tomli-w>=1.0"]
+
+[project.scripts]
+mcwall = "mcwall.cli:main"
+
+[tool.setuptools]
+packages = ["mcwall"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["network: hits the internet; skipped in nix flake check"]
+addopts = "-m 'not network'"

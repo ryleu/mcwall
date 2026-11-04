@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "mcwall-capture",
+  "version": "${version}",
+  "name": "mcwall capture",
+  "description": "Batch-renders the sky wallpaper library from a job manifest, then exits.",
+  "authors": ["ryleu"],
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["me.ryleu.mcwall.capture.McwallCapture"]
+  },
+  "mixins": ["mcwall.mixins.json"],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.4",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}

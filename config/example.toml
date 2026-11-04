@@ -1,0 +1,73 @@
+# Every option mcwall reads, with its default.
+# Copy to ~/.config/mcwall/config.toml and change what you need; anything left
+# out falls back to the default, so a two-line file is fine.
+
+[location]
+# Written by `mcwall init`. Drives sunrise, sunset and the weather fetch.
+latitude = 34.7281
+longitude = -86.5878
+source = "ip"            # "ip" or "manual"
+
+[library]
+root = "~/.local/share/mcwall/library"
+# Match your monitor's native pixel size: `hyprctl monitors -j`.
+width = 2880
+height = 1800
+format = "webp"
+# 85 -> ~0.42 GB for the full grid, 90 -> ~0.62 GB, 95 -> ~1.1 GB.
+quality = 90
+# The weather axis. Dropping "thunder" cuts 576 of the 1728 cells (a third)
+# and costs nothing in correctness: a real thunderstorm degrades to the rain
+# image through the normal fallback chain, logged as "weather thunder->rain".
+weathers = ["clear", "rain", "thunder"]
+
+[render]
+prism_instance = "mc-wallpaper"
+prism_account = "StoleYourSushi"
+shaderpack = "ComplementaryUnbound_r5.9.3.zip"
+world = "mcwall-template"
+# Frames rendered before each capture, so TAA, auto-exposure, clouds and
+# volumetrics have settled. Check with scripts/repeatability.py: PSNR between
+# two renders of the same job should be above 40 dB.
+warmup_frames = 120
+# x, y, z, yaw, pitch. Pick with `mcwall scout`.
+camera = [0.5, 95.0, 0.5, -90.0, -12.0]
+render_distance = 12
+fov = 70
+job_timeout_seconds = 180
+allow_on_battery = false
+
+[display]
+fade_seconds = 2.5
+weather_cache_seconds = 900     # 15 minutes
+interval_seconds = 300
+low_battery_percent = 20
+allow_loops_on_ac = true
+
+# The 48 time slots. Two 3,000-tick twilight windows sit centred on vanilla's
+# real horizon crossings (23215 and 12785), not on ticks 0 and 12000.
+# `mcwall probe --write` replaces all of this with a measured [grid].slot_ticks
+# list, which takes precedence when present.
+[[grid.windows]]
+name = "sunrise"
+start = 21700
+end = 700
+slots = 12
+
+[[grid.windows]]
+name = "day"
+start = 700
+end = 11300
+slots = 12
+
+[[grid.windows]]
+name = "sunset"
+start = 11300
+end = 14300
+slots = 12
+
+[[grid.windows]]
+name = "night"
+start = 14300
+end = 21700
+slots = 12
