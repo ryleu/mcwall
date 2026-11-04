@@ -89,6 +89,33 @@ care about. `cmd | head` hides the exit code of `cmd`.
 - **Frame counts are not readiness.** Chunk generation takes as long as it
   takes. Gate on the actual signals.
 
+## Gate dangerous behaviour on an explicit signal
+
+The capture mod used to start a batch whenever it found a job manifest. A
+finished render leaves one behind, so opening the instance by hand replayed
+the last batch and quit the game out from under whoever was setting up a shot.
+
+It now runs only when the orchestrator sets `MCWALL_CAPTURE=1`. The difference
+is that the safe case is the default and the dangerous one has to be asked
+for, rather than inferred from a file that happens to exist.
+
+Check the signal actually arrives: the variable has to survive
+cage -> headless.sh -> prismlauncher -> JVM, and that was worth proving in
+both directions — a render with it set, and a launch without it that leaves
+the manifest untouched.
+
+## Nix drives the mod build; it does not sandbox it
+
+`mcwall setup` builds the capture mod when it is missing, and `nix run
+.#build-mod` does it alone. Neither is a pure derivation, and that is not an
+oversight: Fabric Loom fetches the game, its mappings and the Fabric libraries
+during the build and decompiles them, which a sandbox forbids. Making it pure
+would mean a fixed-output derivation over the whole Gradle and Loom cache.
+
+Loom also will not resolve on a JVM below 25, while the mod compiles to 21
+because that is what the game runs. The devShell and the flake app both export
+`MCWALL_LOOM_JDK`, and `options.release = 21` bridges the two.
+
 ## Don't delete the source until the output is approved
 
 The first library's PNGs were converted and deleted, and the lossy result

@@ -69,8 +69,11 @@
         packages = with pkgs; [
           pythonEnv
 
-          # Capture mod toolchain
+          # Capture mod toolchain. Loom will not resolve on a JVM below 25,
+          # while the mod itself compiles to 21 because that is what the game
+          # runs; `options.release = 21` bridges the two.
           jdk21
+          jdk25
           gradle
 
           # Headless rendering
@@ -98,11 +101,36 @@
         shellHook = ''
           export MCWALL_ROOT="$PWD"
           export JAVA_HOME="${pkgs.jdk21}"
+          # Loom needs this; scripts/build_mod.sh picks it up.
+          export MCWALL_LOOM_JDK="${pkgs.jdk25}"
           export PYTHONPATH="$PWD:''${PYTHONPATH:-}"
           export GRADLE_USER_HOME="$PWD/var/gradle"
           echo "mcwall devShell — python $(python3 --version | cut -d' ' -f2), jdk $(java -version 2>&1 | head -1 | cut -d'"' -f2)"
         '';
       };
+
+      # Building the capture mod is wrapped by nix but not a pure derivation:
+      # Fabric Loom downloads the game, its mappings and the Fabric libraries
+      # during the build and decompiles them, none of which a sandbox allows.
+      # This gives the toolchain and one command; it does not give a
+      # reproducible, cacheable jar.
+      apps.${system} =
+        let
+          buildMod = {
+            type = "app";
+            program = toString (pkgs.writeShellScript "mcwall-build-mod" ''
+              export PATH=${pkgs.lib.makeBinPath [
+                pkgs.gradle pkgs.jdk25 pkgs.git pkgs.coreutils pkgs.findutils pkgs.gnugrep
+              ]}:$PATH
+              export MCWALL_LOOM_JDK=${pkgs.jdk25}
+              exec ${./scripts/build_mod.sh} "$@"
+            '');
+          };
+        in
+        {
+          build-mod = buildMod;
+          default = buildMod;
+        };
 
       checks.${system} = {
         tests = mcwall;

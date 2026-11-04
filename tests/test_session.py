@@ -56,23 +56,6 @@ def test_no_worlds_yet(tmp_path):
     assert session.worlds(tmp_path / "game") == []
 
 
-def test_jobs_are_stashed_so_the_mod_stays_idle(tmp_path):
-    """Opening the instance by hand must not replay the last batch."""
-    state = tmp_path
-    (state / "jobs.jsonl").write_text('{"id": "x"}\n')
-
-    assert session.stash_jobs(state) is True
-    assert not (state / "jobs.jsonl").exists(), "the mod would still find a manifest"
-
-    session.restore_jobs(state)
-    assert (state / "jobs.jsonl").read_text() == '{"id": "x"}\n'
-
-
-def test_stashing_nothing_is_harmless(tmp_path):
-    assert session.stash_jobs(tmp_path) is False
-    session.restore_jobs(tmp_path)
-
-
 def test_derived_world_keeps_the_seed_and_gets_its_own_name(tmp_path):
     """A variant must generate the same terrain as the world it came from."""
     import nbtlib

@@ -192,6 +192,11 @@ def load(path: Path | None = None) -> Config:
     return config
 
 
+def replace_render(config: "Config", **changes: Any) -> "Config":
+    """A copy of the config with some render settings overridden for one run."""
+    return replace(config, render=replace(config.render, **changes))
+
+
 def update(section: str, values: dict[str, Any]) -> Path:
     """Merge values into one section of the user config, atomically."""
     import tomli_w

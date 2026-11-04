@@ -333,8 +333,14 @@ def cage_command(helper: Path, width: int, height: int, inner: list[str]) -> lis
     return ["cage", "--", "bash", str(helper), str(width), str(height), *inner]
 
 
-def launch(config: Config, state: Path, headless: bool = True) -> subprocess.Popen:
-    """Start one game run. The mod does the rest and quits when it is done."""
+def launch(
+    config: Config, state: Path, headless: bool = True, capture: bool = True
+) -> subprocess.Popen:
+    """Start one game run.
+
+    With ``capture`` the mod picks up the job manifest, works through it and
+    quits. Without it the game opens as an ordinary client.
+    """
     width, height = config.library.width, config.library.height
     # No --world: the mod opens (and, the first time, creates) the world named
     # in each job, so one run can walk several world variants.
@@ -356,6 +362,12 @@ def launch(config: Config, state: Path, headless: bool = True) -> subprocess.Pop
             "MCWALL_STATE": str(state),
         }
     )
+    # The capture mod only runs when this is set, so opening the instance by
+    # hand is always just the game.
+    if capture:
+        environment["MCWALL_CAPTURE"] = "1"
+    else:
+        environment.pop("MCWALL_CAPTURE", None)
     # Straight to a file, never a pipe: the client logs far more than a pipe
     # buffer holds and nothing here would be draining it.
     log_path = state / "client.log"

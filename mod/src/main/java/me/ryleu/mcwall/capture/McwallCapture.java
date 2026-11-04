@@ -11,24 +11,40 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
- * Entry point. With no job manifest present the mod does nothing at all, so the
- * instance stays usable by hand for setting up the template world.
+ * Entry point. The mod does nothing unless the orchestrator asks for a batch,
+ * so this instance stays an ordinary game to open, fly around and set a shot
+ * up in.
  */
 public final class McwallCapture implements ClientModInitializer {
 
     public static final String STATE_DIR = "mcwall";
+    /**
+     * Set by the orchestrator when it launches the game to render.
+     *
+     * <p>The gate is an environment variable rather than the presence of a job
+     * manifest, so that opening this instance by hand — to pick a spot, frame
+     * a shot, or just look around — can never start a batch and quit the game
+     * out from under whoever is using it.
+     */
+    public static final String CAPTURE_ENV = "MCWALL_CAPTURE";
     private static final Logger LOGGER = LoggerFactory.getLogger("mcwall-capture");
 
     private static volatile BatchRunner runner;
 
     @Override
     public void onInitializeClient() {
+        if (!"1".equals(System.getenv(CAPTURE_ENV))) {
+            LOGGER.info("mcwall: {} is not set — idle, the game behaves normally",
+                    CAPTURE_ENV);
+            return;
+        }
+
         Path gameDir = FabricLoader.getInstance().getGameDir();
         Path stateDir = gameDir.resolve(STATE_DIR);
         Path jobs = stateDir.resolve("jobs.jsonl");
 
         if (!Files.exists(jobs)) {
-            LOGGER.info("mcwall: no {} — idle, the game behaves normally", jobs);
+            LOGGER.error("mcwall: {} is set but there is no {}", CAPTURE_ENV, jobs);
             return;
         }
 

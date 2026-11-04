@@ -1,0 +1,57 @@
+{
+  "minecraft": "1.21.4",
+  "fabric_loader": "0.16.14",
+  "lwjgl": "3.3.3",
+  "mods": {
+    "fabric-api": {
+      "project": "fabric-api",
+      "version": "0.119.4+1.21.4",
+      "filename": "fabric-api-0.119.4+1.21.4.jar",
+      "url": "https://cdn.modrinth.com/data/P7dR8mSH/versions/p96k10UR/fabric-api-0.119.4%2B1.21.4.jar",
+      "sha512": "16b679f6a42549ca3b6bc147de710b2c8ba2d5e4661ed88df22782c05a4a5f6c1163d7b13867687ed91acde0fdfe5a5037d05662431c946865b58396284e7ee7",
+      "size": 2149128
+    },
+    "sodium": {
+      "project": "sodium",
+      "version": "mc1.21.4-0.6.13-fabric",
+      "filename": "sodium-fabric-0.6.13+mc1.21.4.jar",
+      "url": "https://cdn.modrinth.com/data/AANobbMI/versions/c3YkZvne/sodium-fabric-0.6.13%2Bmc1.21.4.jar",
+      "sha512": "2c72ca2ddfd27e29ff6c24fccdf6f3d80857bd1014c707017f96cb4a424f94918e53ba21d85f22e3c9171803f8d2c12c99ae857d38d8e85546cc65960b95a2f1",
+      "size": 1306799
+    },
+    "iris": {
+      "project": "iris",
+      "version": "1.8.8+1.21.4-fabric",
+      "filename": "iris-fabric-1.8.8+mc1.21.4.jar",
+      "url": "https://cdn.modrinth.com/data/YL57xq9U/versions/Ca054sTe/iris-fabric-1.8.8%2Bmc1.21.4.jar",
+      "sha512": "5296c4b0c0be6d5259b985577154c02e6534818465205e6995b5229b26414b423d333199152693118a897f31312e4de051abe28df7d0dd0950c8b649e54a50a0",
+      "size": 2682702
+    },
+    "glitchcore": {
+      "project": "glitchcore",
+      "version": "2.3.0.4",
+      "filename": "GlitchCore-fabric-1.21.4-2.3.0.4.jar",
+      "url": "https://cdn.modrinth.com/data/s3dmwKy5/versions/gBxcKjMS/GlitchCore-fabric-1.21.4-2.3.0.4.jar",
+      "sha512": "ee13bc0dd0573c63b267921da293ec0145dfa0a5d122415416a24561685d59472faf721951e6216c0d3a7aaa2f98e540e4086ec5872724e90fd3a89f867ac188",
+      "size": 338781
+    },
+    "serene-seasons": {
+      "project": "serene-seasons",
+      "version": "10.4.0.6",
+      "filename": "SereneSeasons-fabric-1.21.4-10.4.0.6.jar",
+      "url": "https://cdn.modrinth.com/data/e0bNACJD/versions/qanVNGyt/SereneSeasons-fabric-1.21.4-10.4.0.6.jar",
+      "sha512": "08fa9a68e227a261602d1458fcd51d852319eaf38d3d8b5d3b8a71a820a1bf837de8dc2d13afd42027956594381bde85cda27b448f396bcd6d8be8d933311b52",
+      "size": 389817
+    }
+  },
+  "shaderpacks": {
+    "complementary-unbound": {
+      "project": "complementary-unbound",
+      "version": "r5.9.3",
+      "filename": "ComplementaryUnbound_r5.9.3.zip",
+      "url": "https://cdn.modrinth.com/data/R6NEzAwj/versions/B1kyfoUZ/ComplementaryUnbound_r5.9.3.zip",
+      "sha512": "a085d1d8cda67cd17a2b414eeba48bbd809da069f269bab46246235ec8fe714a275013c70d0504527b0987d810deddddba4564332414ab3b3bd7435932ff808c",
+      "size": 553400
+    }
+  }
+}

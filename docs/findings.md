@@ -104,7 +104,7 @@ no `scripts/` directory — which is exactly the path the home-manager unit uses
 
 **The settings hash ignores Iris's own churn.** Iris rewrites
 `iris.properties` on exit, stamping a timestamp and filling in defaults, and
-`setup_instance.py` writes it back to its minimal form. The hash covers the
+`mcwall setup` writes it back to its minimal form. The hash covers the
 pack bytes, the pack's own option file (both spellings Iris might use), and
 only `shaderPack` and `enableShaders` from Iris's config.
 

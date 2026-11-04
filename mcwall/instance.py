@@ -1,10 +1,9 @@
-#!/usr/bin/env python3
 """Create the dedicated Prism render instance.
 
-Idempotent, and it only ever writes inside its own instance directory. The
-user's real instances, worlds and accounts are never touched.
+Idempotent, and it only ever writes inside its own instance directory. Your
+real instances, worlds and accounts are never touched.
 
-    python3 scripts/setup_instance.py [--name mc-wallpaper] [--force]
+Driven by ``mcwall setup``.
 """
 
 from __future__ import annotations
@@ -14,12 +13,15 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess
 import sys
 import urllib.request
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 LOCKFILE = REPO / "config" / "mods.lock.json"
+if not LOCKFILE.exists():  # installed package: the lockfile ships beside it
+    LOCKFILE = Path(__file__).resolve().parent / "mods.lock.json"
 UA = {"User-Agent": "mcwall/0.1 (personal project)"}
 
 PRISM_DIRS = [
@@ -70,6 +72,38 @@ shaderPack={shaderpack}
 disableUpdateMessage=true
 maxShadowRenderDistance=32
 """
+
+
+def built_jars() -> list[Path]:
+    return [
+        jar
+        for jar in sorted((REPO / "mod/build/libs").glob("mcwall-capture-*.jar"))
+        if "sources" not in jar.name
+    ]
+
+
+def capture_mod_jar(build: bool = True) -> Path | None:
+    """The built capture mod, building it first if it is not there.
+
+    The build is not a pure derivation: Fabric Loom fetches the game, its
+    mappings and the Fabric libraries while it runs, and decompiles them.
+    Nix supplies the toolchain and drives it; it does not sandbox it.
+    """
+    jars = built_jars()
+    if jars or not build:
+        return jars[-1] if jars else None
+
+    script = REPO / "scripts" / "build_mod.sh"
+    if not script.exists():
+        return None
+
+    print("capture mod not built yet — building it now")
+    result = subprocess.run(["bash", str(script)])
+    if result.returncode != 0:
+        print("mod build failed; `nix run .#build-mod` shows the full output")
+        return None
+    jars = built_jars()
+    return jars[-1] if jars else None
 
 
 def find_prism() -> Path:
@@ -177,18 +211,7 @@ def instance_cfg(name: str, width: int, height: int, java: str | None) -> str:
     return f"[General]\n{body}\n"
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--name", default="mc-wallpaper")
-    parser.add_argument("--width", type=int, default=2880)
-    parser.add_argument("--height", type=int, default=1800)
-    parser.add_argument("--java", default=os.environ.get("MCWALL_JAVA"))
-    parser.add_argument("--render-distance", type=int, default=16)
-    parser.add_argument(
-        "--force", action="store_true", help="rewrite instance.cfg and mmc-pack.json"
-    )
-    args = parser.parse_args()
-
+def setup(args) -> int:
     lock = json.loads(LOCKFILE.read_text())
     prism = find_prism()
     instance = prism / "instances" / args.name
@@ -226,18 +249,15 @@ def main() -> int:
             stray.unlink()
             print(f"removed stray mod {stray.name}")
 
-    # The capture mod, if it has been built. Without it the instance is just a
-    # normal 1.21.4 Fabric install, which is what you want while setting up the
-    # template world by hand.
-    built = sorted((REPO / "mod/build/libs").glob("mcwall-capture-*.jar"))
-    built = [jar for jar in built if "sources" not in jar.name]
+    built = capture_mod_jar(build=not args.no_build)
     for stale in (game / "mods").glob("mcwall-capture-*.jar"):
         stale.unlink()
     if built:
-        shutil.copy2(built[-1], game / "mods" / built[-1].name)
-        print(f"installed   {built[-1].name}")
+        shutil.copy2(built, game / "mods" / built.name)
+        print(f"installed   {built.name}")
     else:
-        print("note: capture mod not built yet (cd mod && ./gradlew build)")
+        print("note: no capture mod — the instance works as a normal game,")
+        print("      but `mcwall render` has nothing to drive it")
 
     shaderpack = None
     for entry in lock["shaderpacks"].values():
@@ -267,9 +287,8 @@ def main() -> int:
         iris_config.write_text(IRIS_PROPERTIES.format(shaderpack=shaderpack))
         print("wrote       config/iris.properties")
     print(f"\ninstance ready: {instance}")
-    print("launch with: prismlauncher --launch", args.name, "--profile <account>")
+    print("next: `mcwall edit` to pick a spot and set your framing")
     return 0
 
 
-if __name__ == "__main__":
-    sys.exit(main())
+

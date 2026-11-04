@@ -51,6 +51,6 @@ Everything except the visual review runs without a person watching.
   home-manager unit runs the built one.
 - **A stray client.** Killing the launcher orphans the JVM, which keeps
   rendering the previous manifest and holds the world lock.
-- **The settings hash across a `setup_instance.py` run.** Both Iris and
-  `setup_instance.py` rewrite `iris.properties`, in opposite directions; the
+- **The settings hash across a `mcwall setup` run.** Both Iris and
+  `mcwall setup` rewrite `iris.properties`, in opposite directions; the
   hash must not move.

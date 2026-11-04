@@ -15,6 +15,9 @@ mcwall = "mcwall.cli:main"
 [tool.setuptools]
 packages = ["mcwall"]
 
+[tool.setuptools.package-data]
+mcwall = ["mods.lock.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = ["network: hits the internet; skipped in nix flake check"]

@@ -17,9 +17,6 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-STASHED_JOBS = "jobs.jsonl.idle"
-
-
 @dataclass(frozen=True)
 class Camera:
     x: float
@@ -134,24 +131,3 @@ def derive_world(source: Path, target: Path) -> Path:
     rename_level(target, target.name)
     log.info("derived %s from %s", target.name, source.name)
     return target
-
-
-def stash_jobs(state: Path) -> bool:
-    """Move the job manifest aside so the mod idles while a person plays.
-
-    Without this, opening the instance by hand replays the last batch: the
-    mod finds `jobs.jsonl`, starts capturing, and quits the game out from
-    under whoever is setting up the shot.
-    """
-    jobs = state / "jobs.jsonl"
-    if not jobs.exists():
-        return False
-    jobs.replace(state / STASHED_JOBS)
-    return True
-
-
-def restore_jobs(state: Path) -> None:
-    """Put a stashed manifest back, so a resumed render still finds it."""
-    stashed = state / STASHED_JOBS
-    if stashed.exists():
-        stashed.replace(state / "jobs.jsonl")

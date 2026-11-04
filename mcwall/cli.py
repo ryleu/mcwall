@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import shutil
 import sys
 import time
@@ -14,6 +15,7 @@ from pathlib import Path
 from . import apply as apply_mod
 from . import config as config_mod
 from . import deband as deband_mod
+from . import instance as instance_mod
 from . import producer, scout, session, weather
 from .grid import Weather
 from .library import Library, Manifest
@@ -82,6 +84,9 @@ def cmd_plan(args) -> int:
 
 def cmd_render(args) -> int:
     config = _load()
+    if args.world:
+        config = config_mod.replace_render(config, world=args.world)
+        print(f"rendering from world: {args.world}")
     power = read_power()
     if not power.on_ac and not (args.force or config.render.allow_on_battery):
         raise SystemExit("on battery — refusing to render (pass --force to override)")
@@ -262,6 +267,11 @@ def _adopt(config, world_dir, save: bool) -> int:
     return 0
 
 
+def cmd_setup(args) -> int:
+    """Create or refresh the dedicated Prism render instance."""
+    return instance_mod.setup(args)
+
+
 def cmd_edit(args) -> int:
     """Open the render instance as a normal game to set up the shot."""
     config = _load()
@@ -274,13 +284,8 @@ def cmd_edit(args) -> int:
             f"{', '.join(map(str, stray))}); close it first"
         )
 
-    # Without this the mod finds the last batch and starts capturing over the
-    # top of whoever is trying to set up the shot.
-    if session.stash_jobs(state):
-        print("stashed the previous job manifest so the capture mod stays idle")
-
     print("opening the instance — fly to a spot, set your framing, then quit.")
-    process = producer.launch(config, state, headless=False)
+    process = producer.launch(config, state, headless=False, capture=False)
     process.wait()
     producer.kill_clients(config)
 
@@ -474,6 +479,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-v", "--verbose", action="store_true")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    setup = subparsers.add_parser("setup", help="create the Prism render instance")
+    setup.add_argument("--name", default="mc-wallpaper")
+    setup.add_argument("--width", type=int, default=2880)
+    setup.add_argument("--height", type=int, default=1800)
+    setup.add_argument("--java", default=os.environ.get("MCWALL_JAVA"))
+    setup.add_argument("--render-distance", type=int, default=16)
+    setup.add_argument("--force", action="store_true",
+                       help="also reset instance.cfg, options.txt and iris.properties")
+    setup.add_argument("--no-build", action="store_true",
+                       help="do not build the capture mod if it is missing")
+    setup.set_defaults(func=cmd_setup)
+
     init = subparsers.add_parser("init", help="detect location and write config")
     init.add_argument("--latitude", type=float)
     init.add_argument("--longitude", type=float)
@@ -485,6 +502,7 @@ def main(argv: list[str] | None = None) -> int:
 
     render = subparsers.add_parser("render", help="fill the library in one game run")
     render.add_argument("--limit", type=int, help="render at most N jobs")
+    render.add_argument("--world", help="render from this world instead of the configured one")
     render.add_argument(
         "--sub-season",
         action="append",

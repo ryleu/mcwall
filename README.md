@@ -52,75 +52,68 @@ Both halves are checked rather than assumed: the tick side is solved from
 `DimensionType.timeOfDay` in decompiled 1.21.4, and the real side is
 cross-checked against Skyfield's ephemeris. See `docs/findings.md`.
 
-## Setup
+## The flow
 
 ```sh
-nix develop                                  # devShell with every tool pinned
-python3 scripts/setup_instance.py            # dedicated Prism instance + mods
-(cd mod && ./gradlew build)                  # the capture mod
-python3 scripts/setup_instance.py            # again, to install the built mod
-mcwall init                                  # detect location, write config
+mcwall setup                 # instance, mods, shaderpack — builds the capture mod if needed
+mcwall init                  # detect location, write config
+mcwall edit                  # open the game: pick a world, a spot, your settings
+mcwall render --world <name> # render from that world, headless
 ```
 
-The instance is named `mc-wallpaper` and is marked with a `.mcwall-managed`
+`mcwall setup` builds the capture mod itself when it is missing. That build is
+wrapped by nix but is not a pure derivation — Fabric Loom downloads the game,
+its mappings and the Fabric libraries while it runs, and decompiles them, none
+of which a sandbox allows. Nix supplies the toolchain and one command:
+
+```sh
+nix run .#build-mod          # rebuild the mod on its own
+mcwall setup --no-build      # install whatever is already built
+```
+
+The instance is named `mc-wallpaper` and marked with a `.mcwall-managed`
 file. Nothing outside it is ever written to — your own instances, worlds and
 launcher profiles are not touched.
 
-## Building the library
+### Setting the shot
+
+`mcwall edit` opens the render instance as an ordinary game. Create a world
+with whatever seed you like, fly where you want, set the framing, tune the
+shaderpack in Iris's options, then quit. On exit the camera is read back out
+of the world's `level.dat` and written to config — Minecraft saves the
+player's position and rotation on quit, so nothing has to be captured live.
+
+The capture mod only runs when the orchestrator sets `MCWALL_CAPTURE=1`, which
+it does only for a headless render. Opening the instance by hand — from
+`mcwall edit` or from Prism directly — is always just the game, even with a
+job manifest sitting there from the last render.
+
+Adopting a camera sets `locate_biome = []`, because the biome search replaces
+x and z and would otherwise discard the framing you just set. `mcwall adopt`
+does the same without opening the game, and `--no-save` reports without
+writing.
+
+Your in-game video settings survive: `mcwall setup` will not overwrite an
+existing `options.txt` or `iris.properties` unless you pass `--force`.
+
+The seed comes from the world, not from config. The library's manifest records
+the world name and its seed so a build can be traced back.
+
+Winter renders in a snow-covered variant, and that variant is a **copy** of
+the world you chose rather than a fresh generation. Generating it would only
+match if both used the same seed, which stops being true the moment a world is
+made by hand — and a quarter of the library showing different terrain is the
+kind of mistake you find months later.
+
+### Building the library
 
 ```sh
-mcwall edit                  # open the game, set the shot, quit — camera adopted
 mcwall probe --write         # place the 48 time slots by measured sky change
 mcwall plan                  # what is missing
 mcwall render                # one headless game run fills it
 mcwall verify --decode       # every cell present and decodable
+mcwall gallery               # contact sheets for a look review
 ```
-
-### Setting the shot
-
-`mcwall edit` opens the render instance as an ordinary game. Fly where you
-like, set the framing, tune the shaderpack in Iris's options, then quit. On
-exit the camera is read back out of the world's `level.dat` and written to
-config — Minecraft saves the player's position and rotation on quit, so
-nothing has to be captured live.
-
-It also stashes any leftover job manifest first. Without that, opening the
-instance by hand makes the capture mod replay the last batch and quit the game
-out from under you.
-
-Adopting a camera sets `locate_biome = []`, because the biome search replaces
-x and z and would otherwise discard the framing you just set. `mcwall adopt`
-does the same without opening the game, for when you have played some other
-way, and `--no-save` reports without writing.
-
-Your in-game video settings survive: `setup_instance.py` will not overwrite an
-existing `options.txt` unless you pass `--force`.
-
-The seed comes from the world, not from config. Create a world in-game with
-whatever seed you like and `mcwall edit` adopts it; the library's manifest
-records the world name and its seed so a build can be traced back.
-
-Winter renders in a snow-covered variant, and that variant is a **copy** of
-the base world rather than a fresh generation. Generating it would only match
-if both used the same seed, which stops being true the moment a world is made
-by hand — and a quarter of the library showing different terrain is the kind
-of mistake you find months later.
-
-`mcwall scout` still exists for sweeping a grid of candidate heights and
-headings, if you would rather compare renders than fly around.
-
-The camera is anchored automatically in a biome whose foliage actually changes
-with the season — `forest`, `flower_forest`, `birch_forest`, `dark_forest`,
-`plains` or `meadow`, whichever is nearest. That matters more than it sounds:
-world spawn here was spruce taiga, and Serene Seasons barely recolours
-conifers, so a taiga camera would make all twelve sub-seasons look identical
-apart from winter snow. Set `[render].locate_biome = []` to pin the camera
-exactly where you put it instead.
-
-Captures are gated on terrain actually being ready — the server's chunk queue
-empty, and the client's loaded-chunk and rendered-section counts both steady.
-At render distance 16 a fresh camera spot has thousands of chunks to generate,
-and a frame count would capture fog where terrain should be.
 
 `render` is resumable: outputs are written with an atomic rename and existing
 ones are skipped, so killing it mid-batch and rerunning costs nothing. It
@@ -142,6 +135,9 @@ but is the only thing that fixes contouring in the dark frames — see
 Budget disk for the run, not just the result: the mod writes lossless PNGs into
 `library/.staging` and they are converted once the batch finishes, so a full
 build needs about **16 GB free** on the way through.
+
+`mcwall scout` still exists for sweeping a grid of candidate heights and
+headings, if you would rather compare renders than fly around.
 
 ## Showing it
 
@@ -206,7 +202,8 @@ if the weather fetch fails it uses the last cached reading, then clear.
 | `mcwall/producer.py` | Prism, cage and Hyprland — all the machine-specific parts |
 | `mod/` | The Fabric capture mod (Gradle, wrapper-pinned) |
 | `nix/home-manager.nix` | The user timer |
-| `scripts/` | Instance setup, mod pinning, source unpacking |
+| `mcwall/instance.py` | Creates the Prism instance; driven by `mcwall setup` |
+| `scripts/` | Mod build, mod pinning, source unpacking, test helpers |
 | `docs/` | Verified facts, testing state, and what is deliberately not built |
 
 ## Tests
