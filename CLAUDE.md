@@ -177,6 +177,12 @@ distinguishable in one glance and in no other cheap way. A single `--limit 1`
 render settled both "is this the right shot" and "does capture still work"
 for about ten minutes of wall clock, before a 5.5-hour commitment.
 
+**Promote, do not announce.** The root manifest is a claim that a build is
+ready to display, so it is written last. Writing it when the render *starts*
+pointed the wallpaper at an empty directory for five hours — the screen froze
+and the timer failed every tick. A build keeps its own manifest beside its
+images while it fills; only a complete one replaces the root.
+
 **Rename the manifest with the directory.** The manifest names the build it
 describes, so moving a library without rewriting it leaves the display path
 unable to find a single image. The first version of the migration renamed only

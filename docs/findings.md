@@ -191,6 +191,18 @@ rows, so this costs no more than the old single-value call.
 The cache is 300 s rather than 900 s, matching the display timer, so a shower
 does not also wait out a stale entry.
 
+## A build goes on screen only when it is whole
+
+`<root>/manifest.json` names the build the display path reads; a render writes
+its own copy to `<root>/<build>/manifest.json` and promotes it only once every
+cell is present. Stamping the root manifest up front pointed the wallpaper at
+a directory that would not be filled for five hours, which froze the screen on
+whatever was last applied and failed the timer every five minutes until the
+run finished.
+
+A resumed run reads that per-build manifest back, so `rendered_at` and the
+recorded settings hash survive being interrupted.
+
 ## The wallpaper daemon
 
 `mcwall apply` fails rather than starting a daemon. `mcwall.service` is a

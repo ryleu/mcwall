@@ -566,3 +566,72 @@ def test_background_conversion_leaves_cores_for_the_game():
 
     assert producer.background_workers() >= 1
     assert producer.background_workers() <= max(1, (os.cpu_count() or 2) // 2)
+
+
+def _complete_build(config, manifest):
+    """Put every image the manifest promises on disk."""
+    from mcwall.library import Library
+
+    library = Library(config.library.root, manifest)
+    for cell in manifest.cells():
+        path = library.path_for(cell)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"")
+
+
+def test_a_half_finished_build_does_not_take_over_the_screen(config, capsys):
+    """Five hours of rendering must not blank the wallpaper while it runs."""
+    from mcwall import cli
+    from mcwall.library import Manifest
+
+    root = config.library.root
+    root.mkdir(parents=True, exist_ok=True)
+    Manifest.from_config(config, "h", pack_id="the-build-on-screen").write(root)
+
+    fresh = Manifest.from_config(config, "h", pack_id="the-new-build")
+    assert cli._promote_if_complete(config, fresh) is False
+    assert Manifest.read(root).pack_id == "the-build-on-screen"
+    assert "stays on screen" in capsys.readouterr().out
+
+
+def test_a_finished_build_takes_over(config, capsys):
+    from mcwall import cli
+    from mcwall.library import Manifest
+
+    root = config.library.root
+    root.mkdir(parents=True, exist_ok=True)
+    Manifest.from_config(config, "h", pack_id="the-build-on-screen").write(root)
+
+    fresh = Manifest.from_config(config, "h", pack_id="the-new-build")
+    _complete_build(config, fresh)
+
+    assert cli._promote_if_complete(config, fresh) is True
+    assert Manifest.read(root).pack_id == "the-new-build"
+    assert "now showing" in capsys.readouterr().out
+
+
+def test_promotion_works_with_nothing_on_screen_yet(config):
+    """The very first build has no previous library to report."""
+    from mcwall import cli
+    from mcwall.library import Manifest
+
+    config.library.root.mkdir(parents=True, exist_ok=True)
+    fresh = Manifest.from_config(config, "h", pack_id="first")
+    assert cli._promote_if_complete(config, fresh) is False  # no images yet
+
+
+def test_a_resumed_run_keeps_the_build_its_own_record(config):
+    """Otherwise rendered_at and settings_hash restart on every resume."""
+    from mcwall import producer
+    from mcwall.library import Manifest
+
+    key = producer.pack_id(config)
+    build = config.library.root / key
+    build.mkdir(parents=True)
+    original = Manifest.from_config(config, "the-original-hash", pack_id=key)
+    original.rendered_at = "2026-11-04T12:00:00+00:00"
+    original.write(build)
+
+    plan = producer.build_plan(config)
+    assert plan.manifest.rendered_at == "2026-11-04T12:00:00+00:00"
+    assert plan.manifest.settings_hash == "the-original-hash"

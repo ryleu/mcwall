@@ -285,7 +285,18 @@ def build_plan(config: Config, settings_hash: str = "", rebuild: bool = False) -
 
     manifest_path = root / "manifest.json"
     manifest = None
-    if manifest_path.exists():
+
+    # A build in progress keeps its record beside its own images, so a
+    # resumed run carries on with the same one rather than restamping it.
+    if (root / key / "manifest.json").exists():
+        try:
+            stored = Manifest.read(root / key)
+            if stored.pack_id == key:
+                manifest = stored
+        except (OSError, ValueError):
+            manifest = None
+
+    if manifest is None and manifest_path.exists():
         stored = Manifest.read(root)
         # A manifest describes one build. If the configuration now points at a
         # different one, start fresh rather than measuring the new build

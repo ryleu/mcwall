@@ -118,6 +118,11 @@ directory, so builds never overwrite each other and you never have to edit a
 config file to keep one. Settings that only affect *how* a frame is reached,
 like warm-up frames, do not fork the library.
 
+A build in progress keeps its manifest beside its own images, and only
+replaces the root one — the build the display path reads — once every image
+is present. So a render can run for hours without disturbing the wallpaper
+that is already up, and a run that stops early leaves it alone entirely.
+
 This is the rule the config file follows: it changes mcwall's behaviour at
 runtime, never what gets built. The world, its seed and the camera all come
 from the save itself, and the manifest records them so a build can be traced

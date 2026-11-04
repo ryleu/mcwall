@@ -127,16 +127,21 @@ def cmd_render(args) -> int:
         print("--dry-run: not launching the game")
         return 0
 
-    config.library.root.mkdir(parents=True, exist_ok=True)
+    root = config.library.root
+    build = root / plan.manifest.pack_id
+    build.mkdir(parents=True, exist_ok=True)
     plan.manifest.rendered_at = datetime.now(timezone.utc).isoformat()
     # Stamp the identity on a library that predates the check, so the next
     # settings change is caught.
     plan.manifest.settings_hash = plan.manifest.settings_hash or identity
     plan.manifest.world = config.render.world
     plan.manifest.seed = producer.world_seed(config)
-    plan.manifest.write(config.library.root)
+    # Beside the images, not at the root. The root manifest names the build
+    # the display path reads, and a build with holes in it is not one: the
+    # library already on screen keeps serving until this one is whole.
+    plan.manifest.write(build)
 
-    staging = config.library.root / ".staging"
+    staging = root / ".staging"
 
     started = time.monotonic()
     status = producer.run_jobs(
@@ -155,7 +160,39 @@ def cmd_render(args) -> int:
         f"failed {status.get('failed', 0)}, "
         f"converted {converted}"
     )
+
+    _promote_if_complete(config, plan.manifest)
     return 0 if status.get("failed", 0) == 0 else 1
+
+
+def _promote_if_complete(config, manifest) -> bool:
+    """Hand the display path a build once it has every image.
+
+    A render writes for hours, and pointing the wallpaper at a half-filled
+    directory on the way through means a frozen screen and a timer that fails
+    every tick until it finishes. Promotion is therefore the last step, and a
+    run that stops early simply leaves the previous library in place.
+    """
+    root = config.library.root
+    library = Library(root, manifest)
+    library.rescan()
+    missing = library.missing_stills()
+
+    if missing:
+        try:
+            on_screen = Manifest.read(root).pack_id
+        except (OSError, ValueError):
+            on_screen = None
+        print(
+            f"{len(missing)} stills still missing — "
+            + (f"{on_screen} stays on screen" if on_screen
+               else "nothing is on screen yet")
+        )
+        return False
+
+    manifest.write(root)
+    print(f"library complete — now showing {manifest.pack_id}")
+    return True
 
 
 def cmd_select(args) -> int:
