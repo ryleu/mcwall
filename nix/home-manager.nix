@@ -4,6 +4,25 @@ self:
 let
   cfg = config.services.mcwall;
   inherit (lib) mkEnableOption mkOption mkIf types;
+
+  # home-manager ships one wallpaper-daemon module, services.awww. The older
+  # services.swww.{enable,package,extraArgs} are mkRenamedOptionModule aliases
+  # onto it, so reading services.awww covers both spellings — there is nothing
+  # separate to detect. It defines the unit `awww.service`.
+  hasAwwwModule = config.services ? awww;
+  awwwEnabled = hasAwwwModule && config.services.awww.enable;
+
+  daemonUnit =
+    if cfg.daemonUnit != null then cfg.daemonUnit
+    else if awwwEnabled then "awww.service"
+    else null;
+
+  # Our unit invokes the client binary, so it needs it on PATH. Take it from
+  # the daemon module when that is what is providing it.
+  daemonPackage =
+    if cfg.daemonPackage != null then cfg.daemonPackage
+    else if awwwEnabled then config.services.awww.package
+    else pkgs.awww;
 in
 {
   options.services.mcwall = {
@@ -26,45 +45,34 @@ in
       '';
     };
 
-    wallpaperDaemon = mkOption {
-      type = types.package;
-      default = pkgs.swww;
-      defaultText = lib.literalExpression "pkgs.swww";
-      description = ''
-        Package providing the still-wallpaper daemon. Recent nixpkgs ships this
-        as awww; mcwall detects either name.
-      '';
-    };
-
-    daemonExecutable = mkOption {
-      type = types.str;
-      default = "awww-daemon";
-      description = ''
-        Daemon binary inside wallpaperDaemon. "awww-daemon" in current
-        nixpkgs, "swww-daemon" before the rename.
-      '';
-    };
-
-    manageDaemon = mkOption {
-      type = types.bool;
-      default = true;
-      description = ''
-        Run the wallpaper daemon as its own user service.
-
-        It cannot be a child of the mcwall unit: that unit is a oneshot, and
-        systemd's default KillMode=control-group reaps everything in the
-        cgroup when it exits, so a daemon started by `mcwall apply` would die
-        seconds later and every tick would start a fresh one.
-
-        Set false if you already run swww or awww some other way, and point
-        daemonUnit at that service instead.
-      '';
-    };
-
     daemonUnit = mkOption {
-      type = types.str;
-      default = "mcwall-wallpaper-daemon.service";
-      description = "Unit that must be running before the wallpaper is set.";
+      type = types.nullOr types.str;
+      default = null;
+      example = "my-wallpaper.service";
+      description = ''
+        Systemd user unit that runs the wallpaper daemon. `mcwall.service`
+        gets `Requires=` and `After=` on it.
+
+        Left null, this is `awww.service` when `services.awww.enable` is set
+        (which `services.swww.enable` is an alias for). With neither, the
+        configuration fails to evaluate rather than installing a timer that
+        would error every five minutes — set this to point at your own unit.
+
+        It cannot be left to `mcwall apply` to start the daemon: that unit is
+        a oneshot, and systemd's default KillMode=control-group reaps the
+        whole cgroup when it exits, so the daemon would die seconds later and
+        every tick would start a fresh one.
+      '';
+    };
+
+    daemonPackage = mkOption {
+      type = types.nullOr types.package;
+      default = null;
+      defaultText = lib.literalExpression "config.services.awww.package";
+      description = ''
+        Package providing the wallpaper client binary (`awww` or `swww`), put
+        on the unit's PATH. Taken from `services.awww` when that is enabled.
+      '';
     };
 
     enableLoops = mkOption {
@@ -81,41 +89,43 @@ in
   };
 
   config = mkIf cfg.enable {
-    home.packages = [ cfg.package cfg.wallpaperDaemon ]
-      ++ lib.optional cfg.enableLoops pkgs.mpvpaper;
+    assertions = [
+      {
+        assertion = daemonUnit != null;
+        message = ''
+          services.mcwall needs a wallpaper daemon to talk to, and none was found.
 
-    # The daemon holds the wallpaper surface, so it has to outlive each run of
-    # the oneshot. Its own unit, in its own cgroup.
-    systemd.user.services.mcwall-wallpaper-daemon = mkIf cfg.manageDaemon {
-      Unit = {
-        Description = "Wallpaper daemon for mcwall";
-        After = [ "graphical-session.target" ];
-        PartOf = [ "graphical-session.target" ];
-      };
-      Service = {
-        Type = "simple";
-        ExecStart = "${cfg.wallpaperDaemon}/bin/${cfg.daemonExecutable}";
-        Restart = "on-failure";
-        RestartSec = "2s";
-      };
-      Install.WantedBy = [ "graphical-session.target" ];
-    };
+          Either enable home-manager's daemon module:
+
+              services.awww.enable = true;
+
+          or point mcwall at a unit you run yourself:
+
+              services.mcwall.daemonUnit = "my-wallpaper.service";
+
+          mcwall deliberately will not start a daemon itself: mcwall.service is
+          a oneshot, so systemd would reap the daemon along with it.
+        '';
+      }
+    ];
+
+    home.packages = [ cfg.package ] ++ lib.optional cfg.enableLoops pkgs.mpvpaper;
 
     systemd.user.services.mcwall = {
       Unit = {
         Description = "Set the Minecraft sky wallpaper for the current moment";
         # Needs a compositor to talk to; never block the session on it.
-        After = [ "graphical-session.target" cfg.daemonUnit ];
+        After = [ "graphical-session.target" ] ++ lib.optional (daemonUnit != null) daemonUnit;
         PartOf = [ "graphical-session.target" ];
         # mcwall apply fails outright without a daemon rather than starting
         # one, so the dependency is a hard Requires, not a Wants.
-        Requires = [ cfg.daemonUnit ];
+        Requires = lib.optional (daemonUnit != null) daemonUnit;
       };
       Service = {
         Type = "oneshot";
         ExecStart = "${cfg.package}/bin/mcwall apply";
         Environment = [
-          "PATH=${lib.makeBinPath ([ cfg.wallpaperDaemon pkgs.procps ]
+          "PATH=${lib.makeBinPath ([ daemonPackage pkgs.procps ]
             ++ lib.optional cfg.enableLoops pkgs.mpvpaper
             ++ cfg.extraPath)}"
         ];
