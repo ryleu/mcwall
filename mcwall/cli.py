@@ -457,7 +457,21 @@ def cmd_verify(args) -> int:
     return 0 if not missing and not broken else 1
 
 
-def main(argv: list[str] | None = None) -> int:
+def cmd_tui(args) -> int:
+    from .tui.app import run
+    from .tui.state import command_specs
+
+    specs = [s for s in command_specs(build_parser()) if s.name != "tui"]
+    return run(_load(), specs)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """The whole command surface, in one place.
+
+    Returned rather than built inline so the TUI can enumerate commands and
+    their options from the same definition the CLI parses, instead of keeping
+    a second list that drifts.
+    """
     parser = argparse.ArgumentParser(prog="mcwall", description=__doc__)
     parser.add_argument("-v", "--verbose", action="store_true")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -560,6 +574,16 @@ def main(argv: list[str] | None = None) -> int:
     verify.add_argument("--decode", action="store_true", help="open every image")
     verify.set_defaults(func=cmd_verify)
 
+    tui = subparsers.add_parser(
+        "tui", help="watch a render and drive the rest from one window"
+    )
+    tui.set_defaults(func=cmd_tui)
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
     args = parser.parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,

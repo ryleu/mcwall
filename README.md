@@ -129,6 +129,29 @@ match if both used the same seed, which stops being true the moment a world is
 made by hand — and a quarter of the library showing different terrain is the
 kind of mistake you find months later.
 
+### One window for all of it
+
+```sh
+mcwall tui
+```
+
+Four views, switched with `d` `w` `c` `o`:
+
+- **dashboard** — which build is being made and which one is on screen, the
+  camera it is shot from, a progress bar, pace, ETA, the job running now with
+  the one before and the next few, and a thumbnail of the last capture
+  (`i` toggles it).
+- **worlds** — every save with its seed and camera. `enter` picks the one to
+  render from, `e` opens it in the game to move the shot.
+- **commands** — every `mcwall` command, read from the CLI's own parser, so
+  the list cannot drift. `enter` opens its options, `space` toggles a flag,
+  `x` runs it. The exact command line is shown before it runs.
+- **output** — what the running command is printing. `x` stops it; a render
+  is resumable, so stopping costs only the still in flight.
+
+It is safe to open while a render is going: the TUI only reads, and the
+render it watches is one it does not own.
+
 ### Building the library
 
 ```sh

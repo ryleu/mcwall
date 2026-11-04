@@ -75,6 +75,11 @@ care about. `cmd | head` hides the exit code of `cmd`.
   *pushed and locked*. A commit here changes nothing until push, `nix flake
   update mcwall` and a rebuild. Adding a manifest field broke every timer tick
   for 40 minutes this way, while the checkout passed every test.
+- **An untracked file is not in the flake either.** `nix build` on a git
+  repository takes tracked files only, so a brand-new module passes every
+  test in the devShell and is simply absent from the built package —
+  `mcwall tui` was "invalid choice" from the installed binary while working
+  perfectly from the checkout. `git add` before trusting a build.
 - **The library format has two readers of different ages.** The producer
   writes it from the checkout; the display path reads it from the pinned
   build. `Manifest.read` therefore drops fields it does not recognise and
@@ -209,6 +214,21 @@ nothing, and fails only when the watchdog gives up — minutes, with the cause
 buried in `latest.log` and nothing in the mod list to notice unless you look
 for an absence. `run_jobs` now refuses up front if no `mcwall-capture-*.jar`
 is in the instance.
+
+## A terminal UI can still be tested
+
+Split it: `state` gathers facts, `layout` turns them into lines, `app` is the
+only part that touches curses. The first two are ordinary functions, so the
+screen can be asserted against without a terminal.
+
+That leaves exactly one gap — curses itself blowing up on draw — and a pty
+smoke test closes it. Prove that test works by breaking the draw on purpose
+and watching it fail; a UI that crashes on the first frame otherwise passes
+every layout assertion there is.
+
+Read the command list out of argparse rather than restating it. The TUI then
+gains a command the moment the CLI does, and `tests/test_tui.py` asserts the
+two sets are equal.
 
 ## Keep documentation in the present tense
 
