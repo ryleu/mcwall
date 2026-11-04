@@ -674,3 +674,59 @@ def test_missing_programs_are_named_before_the_game_starts(config, monkeypatch):
     )
     with pytest.raises(producer.RenderError, match="cage"):
         producer.run_jobs(config, [], config.library.root / ".staging")
+
+
+def _accounts(monkeypatch, tmp_path, entries):
+    """Stand in a Prism data directory with the given accounts."""
+    from mcwall import producer
+
+    (tmp_path / "accounts.json").write_text(json.dumps({
+        "formatVersion": 3,
+        "accounts": [
+            {"active": active, "type": "MSA", "profile": {"name": name}}
+            for name, active in entries
+        ],
+    }))
+    monkeypatch.setattr(producer, "prism_root", lambda: tmp_path)
+
+
+def test_the_profile_comes_from_prism_not_from_a_constant(config, monkeypatch, tmp_path):
+    """It used to be one developer's account name, hardcoded as the default."""
+    from mcwall import producer
+
+    _accounts(monkeypatch, tmp_path, [("ryleu", True), ("someone-else", False)])
+    assert producer.prism_account(config) == "ryleu"
+
+
+def test_a_single_account_needs_no_active_flag(config, monkeypatch, tmp_path):
+    from mcwall import producer
+
+    _accounts(monkeypatch, tmp_path, [("only-one", False)])
+    assert producer.prism_account(config) == "only-one"
+
+
+def test_an_ambiguous_choice_is_an_error_naming_the_options(config, monkeypatch, tmp_path):
+    """Guessing would launch the game as the wrong person."""
+    from mcwall import producer
+
+    _accounts(monkeypatch, tmp_path, [("alice", False), ("bob", False)])
+    with pytest.raises(producer.RenderError, match="alice, bob"):
+        producer.prism_account(config)
+
+
+def test_no_accounts_at_all_says_so(config, monkeypatch, tmp_path):
+    from mcwall import producer
+
+    _accounts(monkeypatch, tmp_path, [])
+    with pytest.raises(producer.RenderError, match="no Minecraft accounts"):
+        producer.prism_account(config)
+
+
+def test_a_configured_account_wins(config, monkeypatch, tmp_path):
+    """Pinning matters once a world holds playerdata for one account."""
+    from mcwall import producer
+    from mcwall.config import replace_render
+
+    _accounts(monkeypatch, tmp_path, [("ryleu", True)])
+    pinned = replace_render(config, prism_account="StoleYourSushi")
+    assert producer.prism_account(pinned) == "StoleYourSushi"

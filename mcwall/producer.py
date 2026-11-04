@@ -44,6 +44,49 @@ def prism_root() -> Path:
     raise RenderError("no Prism Launcher data directory found")
 
 
+def prism_accounts() -> list[tuple[str, bool]]:
+    """Every Minecraft profile Prism knows, and which one is active."""
+    try:
+        raw = json.loads((prism_root() / "accounts.json").read_text())
+    except (OSError, ValueError) as problem:
+        raise RenderError(f"could not read Prism's accounts.json: {problem}") from problem
+
+    found = []
+    for account in raw.get("accounts", []):
+        name = (account.get("profile") or {}).get("name")
+        if name:
+            found.append((name, bool(account.get("active"))))
+    return found
+
+
+def prism_account(config: Config) -> str:
+    """Which profile to launch the game as.
+
+    Configured wins; otherwise Prism's own active account, and failing that
+    the only one there is. The name used to be a constant in this file — one
+    developer's account, which was correct on exactly one machine.
+    """
+    if config.render.prism_account:
+        return config.render.prism_account
+
+    accounts = prism_accounts()
+    if not accounts:
+        raise RenderError(
+            "Prism has no Minecraft accounts; log in to one, or set "
+            "prism_account in the config"
+        )
+    active = [name for name, is_active in accounts if is_active]
+    if active:
+        return active[0]
+    if len(accounts) == 1:
+        return accounts[0][0]
+    raise RenderError(
+        "Prism has no active account and several to choose from ("
+        + ", ".join(name for name, _ in accounts)
+        + "); set prism_account in the config"
+    )
+
+
 def instance_dir(config: Config) -> Path:
     path = prism_root() / "instances" / config.render.prism_instance
     if not (path / ".mcwall-managed").exists():
@@ -478,7 +521,7 @@ def launch(
         "--launch",
         config.render.prism_instance,
         "--profile",
-        config.render.prism_account,
+        prism_account(config),
     ]
     helper = write_headless_helper(state)
     command = cage_command(helper, width, height, prism) if headless else prism

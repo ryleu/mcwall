@@ -31,7 +31,9 @@ weathers = ["clear", "rain", "thunder"]
 
 [render]
 prism_instance = "mc-wallpaper"
-prism_account = "StoleYourSushi"
+# Empty asks Prism: its active account, or the only one it has. Set a name to
+# pin it — worth doing when a world already holds playerdata for one account.
+prism_account = ""
 shaderpack = "ComplementaryUnbound_r5.9.3.zip"
 world = "mcwall-template"
 # Frames rendered before each capture, so TAA, auto-exposure, clouds and

@@ -61,7 +61,10 @@ class RenderConfig:
     """Everything the producer needs. Nothing here may assume Hyprland."""
 
     prism_instance: str = "mc-wallpaper"
-    prism_account: str = "StoleYourSushi"
+    # Empty means "ask Prism": its active account, or the only one there is.
+    # A name here pins it, which matters when a world already has playerdata
+    # for one account and you do not want a second.
+    prism_account: str = ""
     shaderpack: str = "ComplementaryUnbound_r5.9.3.zip"
     # Default world to render from; `mcwall render --world` overrides it per
     # run. The camera is not here: it is read from the world's own save, so

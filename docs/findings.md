@@ -203,6 +203,18 @@ run finished.
 A resumed run reads that per-build manifest back, so `rendered_at` and the
 recorded settings hash survive being interrupted.
 
+**The launch profile comes from Prism.** `--profile` used to be a constant in
+`config.py` — one developer's account name, correct on exactly one machine.
+It is now Prism's own active account, or the only one it has, with
+`render.prism_account` pinning it when that matters. Several accounts and
+none active is an error naming them rather than a guess, because guessing
+launches the game as the wrong person.
+
+Pinning is worth doing once a world holds playerdata for an account: the
+rendered viewpoint does not depend on who logs in, since the mod teleports to
+a camera mcwall supplies, but `level.dat`'s `Player` tag tracks whoever saved
+last and that tag is where the camera is read from.
+
 ## What the package carries, and what it does not
 
 The wrapper puts `cage`, `wlr-randr`, `ffmpeg`, `cwebp`, `mpvpaper` and

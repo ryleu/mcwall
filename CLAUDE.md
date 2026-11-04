@@ -75,6 +75,11 @@ care about. `cmd | head` hides the exit code of `cmd`.
   *pushed and locked*. A commit here changes nothing until push, `nix flake
   update mcwall` and a rebuild. Adding a manifest field broke every timer tick
   for 40 minutes this way, while the checkout passed every test.
+- **A default is a claim about every machine.** The Prism launch profile was
+  a constant in `config.py` holding one developer's account name. It worked
+  here and would have failed everywhere else, silently picking a profile that
+  does not exist. Defaults that name a person, a path or a host belong in
+  detection or in the user's config, not in the source.
 - **The devShell hides every runtime dependency.** `cage`, `wlr-randr`,
   `mpvpaper` and `pkill` are on `PATH` while developing, so nothing shells
   out in vain — and none of them were in the package's closure. A render

@@ -1,7 +1,7 @@
 # Testing
 
 ```sh
-nix flake check              # 194 unit tests in a sandbox: no network, no game
+nix flake check              # 199 unit tests in a sandbox: no network, no game
 pytest -q tests              # the same, in the devShell
 pytest -m network            # adds the Skyfield ephemeris cross-check
 mcwall verify --decode       # opens every image in the library
@@ -24,6 +24,7 @@ Everything except the visual review runs without a person watching.
 | Slot placement | `tests/test_scout.py` | Passing: slots concentrate where the picture changes, spread evenly when it changes uniformly, and identical frames are rejected rather than guessed at. |
 | Promotion on completion | `tests/test_producer.py` | Passing: a half-finished build leaves the active manifest alone, a complete one replaces it, and a resumed run keeps its own build record. Confirmed live: a `--limit 1` run reported 1626 missing and left the forest library on screen. |
 | Conversion during a run | `tests/test_producer.py` | Passing: converts finished captures, never deletes the live staging tree, defers a failed encode to the final sweep, and the thread stops with the run. |
+| Launch profile | `tests/test_producer.py` | Passing: the active account wins, a sole account needs no flag, an ambiguous choice errors naming the options, and a configured name overrides all of it. |
 | Render tool preflight | `tests/test_producer.py` | Passing: missing programs are named and the run refuses to start. The built wrapper was checked from an empty PATH — cage, wlr-randr, cwebp, ffmpeg, mpvpaper and pkill all resolve; prismlauncher deliberately does not. |
 | TUI subprocesses | `tests/test_tui.py` | Passing: a spawned command can import mcwall from a directory with no PYTHONPATH. Confirmed against the built package by driving its TUI through a pty and running `verify`. |
 | TUI | `tests/test_tui.py` | Passing: progress arithmetic, job neighbours, torn status files, and a pty smoke test that drives every view — verified to fail when the draw is broken. The command list is asserted equal to the CLI's own parser. |
