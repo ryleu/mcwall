@@ -164,6 +164,20 @@ unable to find a single image. The first version of the migration renamed only
 the directory, and a `--dry-run` — which deliberately writes nothing — was
 enough to take 1,728 images offline until the next full render.
 
+## Ask what the number is supposed to mean
+
+`current.weather_code` was reported as overcast while it was raining outside,
+and the airport's own observation agreed. Nothing was broken: showers come in
+bursts and the sample landed in a dry gap. The code was a faithful answer to
+a question nobody was asking.
+
+"Is it raining *right this instant*" and "is it raining" are different
+questions, and the wallpaper wants the second. Weather is now the worst sky in
+the last 30 minutes of the radar nowcast.
+
+Worth checking a source against ground truth before concluding the code is
+wrong — the station observation is what proved the model was honest.
+
 ## Keep documentation in the present tense
 
 Comments and docs describe how the code is *now* and why. They do not narrate

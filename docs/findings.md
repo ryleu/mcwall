@@ -157,6 +157,34 @@ So conversion runs `gradfun` and encodes near-lossless, straight from the
 lossless capture. The dither is load-bearing: a lossy re-encode strips it and
 the banding returns exactly as it was.
 
+## Rain is a window, not an instant
+
+Open-Meteo's `current.weather_code` is one sample of a model, and showers
+arrive in bursts. Measured in Huntsville on 2026-11-04, during rain:
+
+| Source | Time (UTC) | Reported |
+| --- | --- | --- |
+| `current.weather_code` | 18:45 | 3 (overcast), 0.0 mm |
+| KHSV station observation | 18:30 | "Cloudy" |
+| 15-minute nowcast | 18:00, 18:15 | **1.4 / 1.3 mm, code 63** |
+| 15-minute nowcast | 18:30, 18:45 | 0.0 mm, code 3 |
+| 15-minute nowcast | 19:00 | 0.5 mm, code 80 |
+
+Both the model and the airport were right and both were useless: the sample
+landed in a dry gap between two showers while it was raining outside. An
+instantaneous categorical code does not mean what a person means by "it is
+raining", and it makes the wallpaper flicker between skies.
+
+So the weather is the most notable sky in the last `RAIN_LOOKBACK_MINUTES`
+(30) of the nowcast, which is radar-derived. Spans are stamped with their
+start, so one straddling the cutoff still counts; spans starting after now are
+forecasts and are ignored. Precipitation with a dry-looking code is rain — the
+millimetres win. `past_minutely_15=3&forecast_minutely_15=1` returns five
+rows, so this costs no more than the old single-value call.
+
+The cache is 300 s rather than 900 s, matching the display timer, so a shower
+does not also wait out a stale entry.
+
 ## The wallpaper daemon
 
 `mcwall apply` fails rather than starting a daemon. `mcwall.service` is a

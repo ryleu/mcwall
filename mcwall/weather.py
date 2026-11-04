@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .config import STATE_DIR
-from .grid import Weather, weather_from_wmo
+from .grid import Weather, severity, weather_from_wmo
 
 log = logging.getLogger(__name__)
 
@@ -24,6 +24,15 @@ GEO_URLS = (
     ("http://ip-api.com/json/", "lat", "lon"),
 )
 TIMEOUT = 8.0
+
+# How far back to look for precipitation. An instantaneous weather code is a
+# poor match for what a person means by "it is raining": showers come in
+# bursts, and sampling a dry gap between two of them reads as clear while
+# someone standing outside is still getting wet. Open-Meteo's 15-minute
+# nowcast is radar-derived, so taking the most notable sky in the recent past
+# both tracks what it feels like and stops the wallpaper flickering.
+RAIN_LOOKBACK_MINUTES = 30
+NOWCAST_STEP = timedelta(minutes=15)
 
 
 @dataclass(frozen=True)
@@ -73,14 +82,59 @@ def detect_location() -> tuple[float, float]:
     raise RuntimeError("IP geolocation failed:\n  " + "\n  ".join(errors))
 
 
+def _recent_weather(
+    block: dict | None, now: datetime, lookback: timedelta
+) -> tuple[Weather, int] | None:
+    """The most notable sky in the recent past, or None if unavailable.
+
+    Each entry is stamped with the *start* of its 15-minute span, so a span
+    counts when any of it falls inside the window. Entries that start after
+    ``now`` are forecasts and are ignored — the wallpaper reports the weather,
+    it does not predict it.
+    """
+    if not block or "time" not in block:
+        return None
+
+    cutoff = now - lookback
+    worst: tuple[Weather, int] | None = None
+    for stamp, precipitation, code in zip(
+        block["time"],
+        block.get("precipitation") or [],
+        block.get("weather_code") or [],
+    ):
+        if code is None:
+            continue
+        start = datetime.fromisoformat(stamp)
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+        if start > now or start + NOWCAST_STEP <= cutoff:
+            continue
+
+        weather = weather_from_wmo(int(code))
+        # Precipitation with a dry-looking code still means it rained.
+        if weather is Weather.CLEAR and (precipitation or 0) > 0:
+            weather = Weather.RAIN
+        if worst is None or severity(weather) > severity(worst[0]):
+            worst = (weather, int(code))
+    return worst
+
+
 def current(
     latitude: float,
     longitude: float,
-    max_age_seconds: int = 900,
+    max_age_seconds: int = 300,
     now: datetime | None = None,
+    lookback: timedelta | None = None,
 ) -> Observation:
-    """Current weather, from cache when it is fresh enough."""
+    """Current weather, from cache when it is fresh enough.
+
+    The cache window matches the display timer's cadence, so a shower is not
+    waiting out a stale entry on top of the lookback.
+    """
     now = now or datetime.now(timezone.utc)
+    lookback = lookback if lookback is not None else timedelta(
+        minutes=RAIN_LOOKBACK_MINUTES
+    )
     path = _cache_path("weather.json")
     cached = _read_cache(path)
 
@@ -97,19 +151,28 @@ def current(
     try:
         import httpx
 
+        steps = RAIN_LOOKBACK_MINUTES // 15 + 1
         response = httpx.get(
             WEATHER_URL,
             params={
                 "latitude": round(latitude, 3),
                 "longitude": round(longitude, 3),
                 "current": "weather_code",
+                "minutely_15": "precipitation,weather_code",
+                "past_minutely_15": steps,
+                "forecast_minutely_15": 1,
                 "timezone": "UTC",
             },
             timeout=TIMEOUT,
         )
         response.raise_for_status()
-        code = int(response.json()["current"]["weather_code"])
+        payload = response.json()
+        code = int(payload["current"]["weather_code"])
         weather = weather_from_wmo(code)
+
+        recent = _recent_weather(payload.get("minutely_15"), now, lookback)
+        if recent is not None and severity(recent[0]) > severity(weather):
+            weather, code = recent
         _write_cache(
             path,
             {

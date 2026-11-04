@@ -27,6 +27,15 @@ WEATHER_FALLBACK = {
     Weather.CLEAR: None,
 }
 
+# How dramatic each sky is, so a span of observations can be reduced to the
+# most notable one. Deliberately the reverse of WEATHER_FALLBACK's chain.
+_SEVERITY = {Weather.CLEAR: 0, Weather.RAIN: 1, Weather.THUNDER: 2}
+
+
+def severity(weather: Weather) -> int:
+    """Rank a sky, worst highest."""
+    return _SEVERITY[Weather(weather)]
+
 
 @dataclass(frozen=True)
 class SlotWindow:
