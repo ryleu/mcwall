@@ -68,7 +68,6 @@ class RenderConfig:
     # Camera spot in the template world: x y z yaw pitch.
     camera: tuple[float, float, float, float, float] = (0.5, 80.0, 0.5, -90.0, -10.0)
     render_distance: int = 16
-    fov: int = 70
     # Ticks the chunk counts must hold steady before a capture is allowed.
     terrain_stable_ticks: int = 40
     # Biomes to anchor the camera in. Serene Seasons recolours temperate
@@ -98,8 +97,9 @@ class RenderConfig:
 class DisplayConfig:
     fade_seconds: float = 2.5
     weather_cache_seconds: int = 900
-    interval_seconds: int = 300
-    low_battery_interval_seconds: int = 1800
+    # Below this, `apply` returns before doing any work, so the timer still
+    # wakes but costs only a process spawn. How often it wakes is the
+    # home-manager module's `interval`, not a setting here.
     low_battery_percent: int = 20
     allow_loops_on_ac: bool = True
 

@@ -12,8 +12,10 @@ elevation above the horizon is ``90 - |angle|`` with the angle wrapped to
 (-180, 180].
 
 This file is pure maths with no game and no I/O, so every claim in it is
-unit-testable. ``scripts/verify_sun_formula.py`` re-derives the two constants
-below from the decompiled 1.21.4 source.
+unit-testable. ``tests/test_mctime.py`` restates the formula above
+independently and checks this implementation against it; the source it was
+read from is reachable with ``./gradlew genSources`` and
+``scripts/unpack_sources.py``.
 """
 
 from __future__ import annotations

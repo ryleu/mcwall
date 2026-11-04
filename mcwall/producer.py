@@ -131,9 +131,9 @@ def shaderpack_identity(config: Config) -> str:
 
     # From Iris's own config, only the two keys that decide what gets
     # rendered. The rest is bookkeeping that churns on its own: Iris fills in
-    # defaults when the game exits, and setup_instance.py writes the file back
-    # to its minimal form, so hashing all of it flagged the library stale after
-    # almost every run.
+    # defaults when the game exits and setup_instance.py writes the file back
+    # to its minimal form, so hashing the whole file would mark the library
+    # stale after almost every run.
     iris = dict(_properties(game / "config/iris.properties"))
     for key in ("shaderPack", "enableShaders"):
         digest.update(f"{key}={iris.get(key, '')}".encode())

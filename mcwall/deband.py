@@ -1,21 +1,26 @@
-"""Repair banding in an already-encoded library.
+"""Repair banding in a library that is already encoded.
 
-Dark frames in this grid use very little of the 8-bit range — a night sky
-spans roughly 18 to 31 of 255 luma levels — so a smooth gradient has only a
-dozen or so values to cross and contours visibly. Lossy WebP then quantises
-blocks of it, which adds a second, blockier layer of the same artefact.
+New renders deband during conversion instead (see
+:func:`mcwall.producer.convert_one`), straight from the lossless capture.
+This module is for a library whose images are already on disk.
+
+Dark frames use very little of the 8-bit range — a night sky spans roughly 18
+to 31 of 255 luma levels — so a smooth gradient has only a dozen or so values
+to cross and contours visibly. Lossy WebP then quantises blocks of it, adding
+a second, blockier layer of the same artefact.
 
 ``ffmpeg``'s ``gradfun`` interpolates across each band and dithers the result,
 which hides both. The dither is the load-bearing part: it is high-frequency
-noise, so a lossy re-encode removes it and the banding returns exactly as it
-was. The output therefore has to be near-lossless.
+noise, so a lossy re-encode strips it and the banding returns exactly as it
+was. The output therefore has to be near-lossless, at roughly 8x the size.
 
-This cannot recover detail the 8-bit capture never had — it reconstructs a
-plausible smooth gradient. For sky that is the right trade, but rendering the
-nights brighter in the first place is the real fix.
+This reconstructs a plausible smooth gradient rather than recovering detail
+the 8-bit capture never had. That is the best available fix: Complementary
+exposes no night-sky brightness option, so the gradient cannot be given more
+range at render time (see docs/findings.md).
 
 The pass never writes over the library in place: it builds a new tree, checks
-it, and swaps, keeping the original until it is deleted by hand.
+the count matches, and swaps, keeping the original until it is deleted by hand.
 """
 
 from __future__ import annotations

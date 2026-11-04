@@ -38,17 +38,42 @@ world = "mcwall-template"
 # volumetrics have settled. Check with scripts/repeatability.py: PSNR between
 # two renders of the same job should be above 40 dB.
 warmup_frames = 120
-# x, y, z, yaw, pitch. Pick with `mcwall scout`.
-camera = [0.5, 95.0, 0.5, -90.0, -12.0]
-render_distance = 12
-fov = 70
+# x, y, z, yaw, pitch. Pick with `mcwall scout`. The x and z are replaced by
+# the located biome unless locate_biome is empty, so height and heading are
+# the parts that matter here.
+camera = [-191.5, 98.0, 192.5, 90.0, -12.0]
+render_distance = 16
+# Ticks the chunk counts must hold steady before a capture is allowed.
+terrain_stable_ticks = 40
 job_timeout_seconds = 180
 allow_on_battery = false
+
+# The camera's x and z are re-anchored onto the nearest of these biomes.
+# Serene Seasons recolours broadleaf foliage strongly and conifers barely at
+# all, so a taiga camera would make all twelve sub-seasons look alike apart
+# from winter snow. Set to [] to use `camera` exactly as written.
+locate_biome = [
+  "minecraft:forest",
+  "minecraft:flower_forest",
+  "minecraft:birch_forest",
+  "minecraft:dark_forest",
+  "minecraft:plains",
+  "minecraft:meadow",
+]
+locate_radius = 6000
+
+# Winter renders in a snow-covered copy of the template. Snow is placed
+# directly around the camera once, because vanilla snowfall would take about
+# 17 minutes per world to cover render distance and would land randomly.
+snow_soak_ticks = 2400
+snow_random_tick_speed = 120
+snow_season = "mid_winter"
 
 [display]
 fade_seconds = 2.5
 weather_cache_seconds = 900     # 15 minutes
-interval_seconds = 300
+# Below this, `apply` returns before doing any work. How often the timer wakes
+# is the home-manager module's `interval`, not a setting here.
 low_battery_percent = 20
 allow_loops_on_ac = true
 

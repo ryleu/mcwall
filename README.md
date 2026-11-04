@@ -50,7 +50,7 @@ anchors move while the ticks stay put.
 
 Both halves are checked rather than assumed: the tick side is solved from
 `DimensionType.timeOfDay` in decompiled 1.21.4, and the real side is
-cross-checked against Skyfield's ephemeris. See `docs/phase0-findings.md`.
+cross-checked against Skyfield's ephemeris. See `docs/findings.md`.
 
 ## Setup
 
@@ -85,9 +85,9 @@ apart from winter snow. Set `[render].locate_biome = []` to pin the camera
 exactly where you put it instead.
 
 Captures are gated on terrain actually being ready — the server's chunk queue
-empty, and the client's loaded-chunk and rendered-section counts both steady —
-not on a frame count. At render distance 16 a fixed count captured fog where
-terrain should be.
+empty, and the client's loaded-chunk and rendered-section counts both steady.
+At render distance 16 a fresh camera spot has thousands of chunks to generate,
+and a frame count would capture fog where terrain should be.
 
 `render` is resumable: outputs are written with an atomic rename and existing
 ones are skipped, so killing it mid-batch and rerunning costs nothing. It
@@ -96,14 +96,19 @@ pulled mid-run. `--sub-season mid_autumn` (or `--now`) renders one season's 144
 stills if you want something usable before the whole grid is done.
 
 Measured on an AMD Radeon 840M at 2880x1800, render distance 16, with
-Complementary Unbound: **11.4 s per still** over a full 144-still sub-season,
-so the whole grid is about **5.5 hours**. The images come out at **0.25 MB on
-average** (0.06 MB for a dark night frame, 0.89 MB for a bright rainy one), so
-the full library is **~0.43 GB** at quality 90.
+Complementary Unbound: **11.4 s per still**, so the whole grid is about
+**5.5 hours**. Warm-up frames are nearly the entire per-still cost, and
+`scripts/repeatability.py` is the lever if that needs to come down.
+
+Images are debanded and written near-lossless, which costs about 8x the disk
+but is the only thing that fixes contouring in the dark frames — see
+[Banding](docs/findings.md#banding). The grid lands at **~3.2 GB**, roughly
+1.9 MB per image. Set `[library].deband = false` for plain lossy WebP at
+~0.43 GB, with visible banding at night.
 
 Budget disk for the run, not just the result: the mod writes lossless PNGs into
-`library/.staging` and they are only converted once the batch finishes, so a
-full build needs about **16 GB free** on the way through.
+`library/.staging` and they are converted once the batch finishes, so a full
+build needs about **16 GB free** on the way through.
 
 ## Showing it
 
@@ -169,7 +174,7 @@ if the weather fetch fails it uses the last cached reading, then clear.
 | `mod/` | The Fabric capture mod (Gradle, wrapper-pinned) |
 | `nix/home-manager.nix` | The user timer |
 | `scripts/` | Instance setup, mod pinning, source unpacking |
-| `docs/` | Phase findings and verified assumptions |
+| `docs/` | Verified facts, testing state, and what is deliberately not built |
 
 ## Tests
 
