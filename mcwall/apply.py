@@ -71,30 +71,28 @@ def write_last(choice: Choice) -> None:
     temporary.replace(LAST_APPLIED)
 
 
-def _send(command: list[str], daemon: str, timeout: float = 10.0) -> None:
-    """Run a daemon command, starting the daemon once if it is not up.
+def _send(command: list[str], daemon: str) -> None:
+    """Run a daemon command, and fail loudly if the daemon is not up.
 
-    There is no liveness probe that works across both CLIs — swww has a
-    `query` subcommand, awww does not — so the command itself is the probe:
-    try it, and if it fails, start the daemon and retry until it takes.
+    Deliberately does not start the daemon. Under a systemd oneshot unit the
+    daemon would be a child in the service's cgroup, and the default
+    KillMode=control-group reaps the whole cgroup when the unit exits — so
+    every timer tick would start a daemon, set the wallpaper, and have it
+    killed seconds later. The daemon has to be its own unit that this one
+    depends on; see nix/home-manager.nix.
+
+    There is no liveness probe common to both CLIs — swww has a `query`
+    subcommand, awww does not — so the command itself is the probe.
     """
     attempt = subprocess.run(command, capture_output=True, text=True)
     if attempt.returncode == 0:
         return
 
-    log.info("starting %s", daemon)
-    subprocess.Popen(
-        [daemon], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True
-    )
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        time.sleep(0.2)
-        attempt = subprocess.run(command, capture_output=True, text=True)
-        if attempt.returncode == 0:
-            return
+    detail = attempt.stderr.strip() or attempt.stdout.strip() or "no output"
     raise NoWallpaperDaemon(
-        f"{' '.join(command)} failed even after starting {daemon}: "
-        f"{attempt.stderr.strip() or attempt.stdout.strip()}"
+        f"{Path(command[0]).name} could not reach its daemon: {detail}\n"
+        f"Start {Path(daemon).name} first — under systemd it must be its own "
+        f"service that mcwall.service depends on, not a child of it."
     )
 
 

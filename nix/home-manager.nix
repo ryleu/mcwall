@@ -36,6 +36,37 @@ in
       '';
     };
 
+    daemonExecutable = mkOption {
+      type = types.str;
+      default = "awww-daemon";
+      description = ''
+        Daemon binary inside wallpaperDaemon. "awww-daemon" in current
+        nixpkgs, "swww-daemon" before the rename.
+      '';
+    };
+
+    manageDaemon = mkOption {
+      type = types.bool;
+      default = true;
+      description = ''
+        Run the wallpaper daemon as its own user service.
+
+        It cannot be a child of the mcwall unit: that unit is a oneshot, and
+        systemd's default KillMode=control-group reaps everything in the
+        cgroup when it exits, so a daemon started by `mcwall apply` would die
+        seconds later and every tick would start a fresh one.
+
+        Set false if you already run swww or awww some other way, and point
+        daemonUnit at that service instead.
+      '';
+    };
+
+    daemonUnit = mkOption {
+      type = types.str;
+      default = "mcwall-wallpaper-daemon.service";
+      description = "Unit that must be running before the wallpaper is set.";
+    };
+
     enableLoops = mkOption {
       type = types.bool;
       default = false;
@@ -53,12 +84,32 @@ in
     home.packages = [ cfg.package cfg.wallpaperDaemon ]
       ++ lib.optional cfg.enableLoops pkgs.mpvpaper;
 
+    # The daemon holds the wallpaper surface, so it has to outlive each run of
+    # the oneshot. Its own unit, in its own cgroup.
+    systemd.user.services.mcwall-wallpaper-daemon = mkIf cfg.manageDaemon {
+      Unit = {
+        Description = "Wallpaper daemon for mcwall";
+        After = [ "graphical-session.target" ];
+        PartOf = [ "graphical-session.target" ];
+      };
+      Service = {
+        Type = "simple";
+        ExecStart = "${cfg.wallpaperDaemon}/bin/${cfg.daemonExecutable}";
+        Restart = "on-failure";
+        RestartSec = "2s";
+      };
+      Install.WantedBy = [ "graphical-session.target" ];
+    };
+
     systemd.user.services.mcwall = {
       Unit = {
         Description = "Set the Minecraft sky wallpaper for the current moment";
         # Needs a compositor to talk to; never block the session on it.
-        After = [ "graphical-session.target" ];
+        After = [ "graphical-session.target" cfg.daemonUnit ];
         PartOf = [ "graphical-session.target" ];
+        # mcwall apply fails outright without a daemon rather than starting
+        # one, so the dependency is a hard Requires, not a Wants.
+        Requires = [ cfg.daemonUnit ];
       };
       Service = {
         Type = "oneshot";

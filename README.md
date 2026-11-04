@@ -124,6 +124,24 @@ Install the timer with the home-manager module:
 }
 ```
 
+`mcwall apply` fails rather than starting a wallpaper daemon itself. It has to:
+the unit is a `oneshot`, and systemd's default `KillMode=control-group` reaps
+everything in the cgroup when it exits, so a daemon started from inside would
+be killed seconds later and every tick would start a fresh one. The module
+therefore runs the daemon as its own unit and makes `mcwall.service` depend on
+it with `Requires=` and `After=`.
+
+If you already run swww or awww some other way, point the module at it instead
+of letting it manage a second one:
+
+```nix
+services.mcwall = {
+  enable = true;
+  manageDaemon = false;        # do not define our own daemon unit
+  daemonUnit = "awww.service"; # require yours instead
+};
+```
+
 ### Power policy
 
 | State | Behaviour |
