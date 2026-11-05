@@ -479,7 +479,7 @@ def test_dry_run_leaves_the_active_library_alone(config, monkeypatch, capsys):
         producer, "run_jobs", lambda *a, **k: pytest.fail("dry run launched the game")
     )
 
-    assert cli.main(["render", "--dry-run"]) == 0
+    assert cli.main(["world", "render", "--dry-run"]) == 0
     assert "jobs queued" in capsys.readouterr().out
     assert Manifest.read(root).pack_id == "the-build-on-screen"
 

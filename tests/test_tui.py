@@ -153,29 +153,59 @@ def test_a_world_that_cannot_be_read_still_appears(tmp_path):
 # ----------------------------------------------------------------- commands
 
 
-def test_the_command_list_is_the_cli(tmp_path):
-    """The TUI must never offer a command the CLI does not have, or miss one."""
+def every_leaf(parser, prefix=()):
+    """Walk the real parser the long way, as a check on the short way."""
+    group = next(
+        (a for a in parser._actions
+         if getattr(a, "choices", None) and hasattr(a, "add_parser")),
+        None,
+    )
+    if group is None:
+        return {" ".join(prefix)}
+    leaves = set()
+    for name, sub in group.choices.items():
+        leaves |= every_leaf(sub, prefix + (name,))
+    return leaves
+
+
+def test_the_command_list_is_the_cli():
+    """The TUI must never offer a command the CLI does not have, or miss one.
+
+    Nested groups are flattened: `world render` is one command to run, and
+    bare `world` is not a command at all.
+    """
     from mcwall.cli import build_parser
 
-    parser = build_parser()
-    subparsers = next(a for a in parser._actions if getattr(a, "dest", None) == "command")
-    specs = state.command_specs(parser)
-
-    assert {s.name for s in specs} == set(subparsers.choices)
+    specs = state.command_specs(build_parser())
+    assert {s.name for s in specs} == every_leaf(build_parser())
     assert all(s.help for s in specs), "every command needs a one-line summary"
+    assert "world" not in {s.name for s in specs}, "a group is not runnable"
 
-    render = next(s for s in specs if s.name == "render")
+    render = next(s for s in specs if s.name == "world render")
     kinds = {o.flags[-1]: o.kind for o in render.options}
     assert kinds["--dry-run"] == "flag"
     assert kinds["--limit"] == "value"
-    assert kinds["--world"] == "value"
+    assert kinds["world"] == "value"
+    assert next(o for o in render.options if o.flags[-1] == "world").positional
 
 
 def test_the_form_builds_the_command_you_would_have_typed():
-    assert state.build_argv("render", {}) == ["render"]
-    assert state.build_argv(
-        "render", {"--dry-run": True, "--limit": "5", "--world": "", "--force": False}
-    ) == ["render", "--dry-run", "--limit", "5"]
+    """Positionals first, and anything left at its default omitted."""
+    from mcwall.cli import build_parser
+
+    specs = {s.name: s for s in state.command_specs(build_parser())}
+    render = specs["world render"]
+
+    assert state.build_argv(render, {}) == ["world", "render"]
+    # Flags follow the order the parser declares them, which is stable.
+    assert state.build_argv(render, {
+        "world": "New World", "--dry-run": True, "--limit": "5", "--force": False,
+    }) == ["world", "render", "New World", "--limit", "5", "--dry-run"]
+
+    apply_spec = specs["library apply"]
+    assert state.build_argv(apply_spec, {"--weather": "rain"}) == [
+        "library", "apply", "--weather", "rain",
+    ]
 
 
 # ------------------------------------------------------------------- layout

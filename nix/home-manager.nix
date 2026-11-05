@@ -70,7 +70,7 @@ in
         configuration fails to evaluate rather than installing a timer that
         would error every five minutes — set this to point at your own unit.
 
-        It cannot be left to `mcwall apply` to start the daemon: that unit is
+        It cannot be left to `mcwall library apply` to start the daemon: that unit is
         a oneshot, and systemd's default KillMode=control-group reaps the
         whole cgroup when it exits, so the daemon would die seconds later and
         every tick would start a fresh one.
@@ -127,13 +127,13 @@ in
         After = [ "graphical-session.target" ] ++ lib.optional (daemonUnit != null) daemonUnit;
         PartOf = [ "graphical-session.target" ];
         ConditionPathExists = "%h/.config/mcwall/config.toml";
-        # mcwall apply fails outright without a daemon rather than starting
+        # mcwall library apply fails outright without a daemon rather than starting
         # one, so the dependency is a hard Requires, not a Wants.
         Requires = lib.optional (daemonUnit != null) daemonUnit;
       };
       Service = {
         Type = "oneshot";
-        ExecStart = "${cfg.package}/bin/mcwall apply";
+        ExecStart = "${cfg.package}/bin/mcwall library apply";
         Environment = [
           "PATH=${
             lib.makeBinPath (

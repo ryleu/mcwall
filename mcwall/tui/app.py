@@ -284,7 +284,7 @@ class App:
             spec = self.form["spec"]
             return layout.command_form(
                 spec, self.form["values"], self.form["cursor"],
-                state.build_argv(spec.name, self.form["values"]),
+                state.build_argv(spec, self.form["values"]),
             )
         if self.view == "dashboard":
             lines = layout.dashboard(self.snapshot, width)
@@ -406,9 +406,9 @@ class App:
         elif key == ord("x"):
             self.runner.stop()
         elif key == ord("r") and self.view == "dashboard":
-            self._run(["render"])
+            self._run(["world", "render"])
         elif key == ord("e") and self.view in ("dashboard", "worlds"):
-            self._run(["edit"])
+            self._run(["world", "edit"])
         elif key in (curses.KEY_UP, ord("k")):
             self._move(-1)
         elif key in (curses.KEY_DOWN, ord("j")):
@@ -472,7 +472,7 @@ class App:
                 if typed is not None:
                     form["values"][option.flags[-1]] = typed
         elif key == ord("x"):
-            argv = state.build_argv(spec.name, form["values"])
+            argv = state.build_argv(spec, form["values"])
             self.form = None
             self._run(argv)
         return True

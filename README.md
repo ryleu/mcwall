@@ -9,7 +9,7 @@ Python every five minutes.
 ```
         PRODUCER (runs once)                    DISPLAY (every 5 minutes)
 
-  mcwall render ──► job manifest               mcwall select ──► mcwall apply
+  mcwall world render ──► job manifest           mcwall library apply
         │                                            │                 │
         ▼                                            │                 ▼
   one headless Minecraft run                         │            swww / awww
@@ -56,8 +56,8 @@ cross-checked against Skyfield's ephemeris. See `docs/findings.md`.
 
 ```sh
 mcwall setup                 # instance, mods, shaderpack — builds the capture mod if needed
-mcwall edit                  # open the game: pick a world, a spot, your settings
-mcwall render --world <name> # render from that world, headless
+mcwall world edit            # open the game: pick a world, a spot, your settings
+mcwall world render <name>   # render from that world, headless
 ```
 
 `mcwall setup` builds the capture mod itself when it is missing. That build is
@@ -76,11 +76,11 @@ launcher profiles are not touched.
 
 ### Setting the shot
 
-`mcwall edit` opens the render instance as an ordinary game. Create a world
+`mcwall world edit` opens the render instance as an ordinary game. Create a world
 with whatever seed you like, fly where you want, set the framing, tune the
 shaderpack in Iris's options, then quit. The shot is wherever you were
 standing: Minecraft saves the player's position and rotation on quit, so
-`mcwall render` reads the camera straight out of that world's `level.dat`.
+`mcwall world render` reads the camera straight out of that world's `level.dat`.
 
 Nothing is written back to config. To render from a different spot, fly
 somewhere else and quit; to render from a different world, pass
@@ -88,7 +88,7 @@ somewhere else and quit; to render from a different world, pass
 
 The capture mod only runs when the orchestrator sets `MCWALL_CAPTURE=1`, which
 it does only for a headless render. Opening the instance by hand — from
-`mcwall edit` or from Prism directly — is always just the game, even with a
+`mcwall world edit` or from Prism directly — is always just the game, even with a
 job manifest sitting there from the last render.
 
 The TUI's worlds view lists every save with its seed and camera, so you can
@@ -159,9 +159,9 @@ render it watches is one it does not own.
 ### Building the library
 
 ```sh
-mcwall render --dry-run      # what is missing, without starting the game
-mcwall render                # one headless game run fills it
-mcwall verify --decode       # every cell present and decodable
+mcwall world render --dry-run   # what is missing, without starting the game
+mcwall world render             # one headless game run fills it
+mcwall library verify --decode  # every cell present and decodable
 ```
 
 `render` is resumable: outputs are written with an atomic rename and existing
@@ -184,11 +184,41 @@ Captures are encoded during the run on half the cores, so `library/.staging`
 only ever holds what the encoder has not caught up with rather than the whole
 grid of lossless PNGs.
 
+## Commands
+
+Three groups, because the nouns are the thing: the program, the worlds you
+render from, and the libraries you render into.
+
+```
+mcwall setup                 # instance, mods, shaderpack, and your location
+mcwall world list            # every save, its seed, its camera, what it built
+mcwall world edit [name]     # open the game to set the shot
+mcwall world render [name]   # fill a library from that world
+mcwall library apply [path]  # work out what to show now, and show it
+mcwall library verify [path] # check a library against its manifest
+mcwall library use <path>    # point the config at a library
+mcwall tui                   # all of the above, in one window
+```
+
+`library apply` takes `--dry-run` to print the choice without setting
+anything, `--json` to see why it chose that cell, and `--at`, `--tick`,
+`--weather` and `--season` to override parts of the decision. Whatever you do
+not override still comes from the real sun, season and sky, so
+`--weather thunder` shows this exact moment in a storm.
+
+Tab completion for bash and zsh is installed with the package. It is generated
+from the parser the CLI itself uses, so it cannot offer a command that does
+not exist:
+
+```sh
+mcwall --completion zsh > ~/.zfunc/_mcwall    # if you are not installing the package
+```
+
 ## Showing it
 
 ```sh
-mcwall select --json         # what would be shown, and why
-mcwall apply                 # set the wallpaper
+mcwall library apply --dry-run --json   # what would be shown, and why
+mcwall library apply                    # set the wallpaper
 ```
 
 Install the timer with the home-manager module:
@@ -203,7 +233,7 @@ Install the timer with the home-manager module:
 }
 ```
 
-`mcwall apply` fails rather than starting a wallpaper daemon itself. It has to:
+`mcwall library apply` fails rather than starting a wallpaper daemon itself. It has to:
 the unit is a `oneshot`, and systemd's default `KillMode=control-group` reaps
 everything in the cgroup when it exits, so a daemon started from inside would
 be killed seconds later and every tick would start a fresh one.

@@ -278,6 +278,19 @@ one-time migration already done. `plan` duplicated `render --dry-run`, and
 Look for the artefact a command is supposed to leave behind. If it was never
 created, nobody has used the command, and nothing has been testing it either.
 
+## Generate the second description, never write it
+
+A shell completion is a second description of the command surface, and a
+second description drifts. `mcwall --completion {bash,zsh}` renders it from
+`build_parser()`, the flake installs the output, and `tests/test_completion.py`
+drives the result in a real shell rather than trusting the text.
+
+Two traps, both found by running it rather than reading it: a case pattern
+containing a space (`world list)`) is a syntax error in both shells, and
+nixpkgs' plain `bash` is built without `compgen`, so every reply comes back
+empty and a completion test "passes" while completing nothing. The devShell
+and the check sandbox both carry `bashInteractive` now.
+
 ## Keep documentation in the present tense
 
 Comments and docs describe how the code is *now* and why. They do not narrate

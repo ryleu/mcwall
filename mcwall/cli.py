@@ -1,4 +1,4 @@
-"""One CLI over the whole system: init, plan, render, select, apply, verify."""
+"""One CLI over the whole system: setup, worlds, libraries."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import logging
 import os
 import sys
 import time
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from . import apply as apply_mod
 from . import config as config_mod
 from . import instance as instance_mod
 from . import producer, session, weather
+from .grid import Weather
 from .library import Library, Manifest, builds as library_builds
 from .seasons import SubSeason
 from .power import read as read_power
@@ -42,13 +44,13 @@ def _library_dir(config: config_mod.Config) -> Path:
     return config.library.path or config.library.root
 
 
-def _open_library(config: config_mod.Config) -> Library:
-    where = _library_dir(config)
+def _open_library(config: config_mod.Config, override=None) -> Library:
+    where = Path(override).expanduser() if override else _library_dir(config)
     if not (where / "manifest.json").exists():
         hint = (
-            "run `mcwall render` first"
+            "run `mcwall world render` first"
             if where == config.library.root
-            else "check library.path in the config"
+            else "check the path, or library.path in the config"
         )
         raise SystemExit(f"no library at {where} — {hint}")
     return Library.open(where)
@@ -170,25 +172,58 @@ def _promote_if_complete(config, manifest) -> bool:
     return True
 
 
-def cmd_select(args) -> int:
+def _forced_cell(args, selector, now, conditions):
+    """The cell to show, with any hand-set parts replacing the measured ones.
+
+    Overrides compose: whatever is not given still comes from the real sun,
+    season and weather, so `--weather thunder` alone shows this moment's sky
+    in a storm rather than some arbitrary frame.
+    """
+    from .grid import Weather, nearest_slot
+    from .seasons import SubSeason
+
+    wanted = selector.target_cell(now, conditions)
+    if args.weather:
+        wanted = replace(wanted, weather=Weather(args.weather))
+    if args.season:
+        wanted = replace(wanted, sub_season=SubSeason.from_key(args.season))
+    if args.tick is not None:
+        wanted = replace(
+            wanted, tick=nearest_slot(args.tick, selector.library.manifest.ticks)
+        )
+    return wanted
+
+
+def cmd_apply(args) -> int:
     config = _load()
     latitude, longitude = _require_location(config)
-    library = _open_library(config)
     power = read_power()
 
+    if not args.dry_run and power.percent is not None and not power.on_ac:
+        if power.percent < config.display.low_battery_percent and not args.force:
+            print(f"battery {power.percent}% — leaving the wallpaper alone")
+            return 0
+
+    library = _open_library(config, args.path)
     observation = weather.current(
         latitude, longitude, config.display.weather_cache_seconds
     )
     conditions = Conditions(weather=observation.weather, on_ac=power.on_ac)
-    now = datetime.now(timezone.utc) if args.at is None else datetime.fromisoformat(args.at)
-
+    now = (
+        datetime.now(timezone.utc)
+        if args.at is None
+        else datetime.fromisoformat(args.at)
+    )
     selector = Mode1Selector(
         library, latitude, longitude, allow_loops=config.display.allow_loops_on_ac
     )
     try:
-        choice = selector.select(now, conditions)
+        wanted = _forced_cell(args, selector, now, conditions)
+        choice = selector.resolve(wanted, on_ac=power.on_ac)
     except NoAssetAvailable as error:
         raise SystemExit(str(error))
+    except (KeyError, ValueError) as error:
+        raise SystemExit(f"no such season or weather: {error}")
 
     if args.json:
         print(json.dumps({
@@ -203,62 +238,18 @@ def cmd_select(args) -> int:
             "on_ac": power.on_ac,
             "battery_percent": power.percent,
         }, indent=2))
-    else:
+        if args.dry_run:
+            return 0
+    elif args.dry_run:
         detail = "exact" if choice.exact else "; ".join(choice.reasons)
         print(f"{choice.path}  [{choice.kind}] {detail}")
-    return 0
-
-
-def cmd_apply(args) -> int:
-    config = _load()
-    latitude, longitude = _require_location(config)
-    power = read_power()
-
-    if power.percent is not None and not power.on_ac:
-        if power.percent < config.display.low_battery_percent and not args.force:
-            print(f"battery {power.percent}% — leaving the wallpaper alone")
-            return 0
-
-    library = _open_library(config)
-    observation = weather.current(
-        latitude, longitude, config.display.weather_cache_seconds
-    )
-    selector = Mode1Selector(
-        library, latitude, longitude, allow_loops=config.display.allow_loops_on_ac
-    )
-    try:
-        choice = selector.select(
-            datetime.now(timezone.utc),
-            Conditions(weather=observation.weather, on_ac=power.on_ac),
-        )
-    except NoAssetAvailable as error:
-        raise SystemExit(str(error))
+        return 0
 
     changed = apply_mod.apply(choice, config.display, force=args.force)
     if changed:
         print(f"wallpaper -> {choice.path}")
     elif args.verbose:
         print("unchanged")
-    return 0
-
-
-def _report(config, world_dir) -> int:
-    """Describe a world's shot and how to render it.
-
-    Nothing is written. The camera lives in the world's save, so a world is
-    already a complete description of a shot — there is no config to keep in
-    step with it.
-    """
-    camera = session.read_camera(world_dir)
-    seed = session.read_seed(world_dir)
-    print(f"world:  {world_dir.name}")
-    print(f"seed:   {seed}")
-    print(f"camera: {camera}")
-    print()
-    print("render it with:")
-    print(f"  mcwall render --world {world_dir.name!r}")
-    if world_dir.name == config.render.world:
-        print("  (or just `mcwall render` — this is the configured default)")
     return 0
 
 
@@ -294,6 +285,36 @@ def cmd_setup(args) -> int:
             f"library is configured for {config.library.width}x{config.library.height}"
         )
     return status
+
+
+def cmd_world_list(args) -> int:
+    """Every save in the render instance, and what each would build."""
+    config = _load()
+    game = producer.game_dir(config)
+    worlds = session.worlds(game)
+    if not worlds:
+        raise SystemExit(f"no worlds in {game} — run `mcwall world edit` to make one")
+
+    for world in worlds:
+        chosen = "*" if world.name == config.render.world else " "
+        seed = session.read_seed(world)
+        print(f" {chosen} {world.name}")
+        print(f"     seed   {seed if seed is not None else '—'}")
+        try:
+            camera = session.read_camera(world)
+            print(f"     camera {camera}")
+        except session.NoPlayerPosition:
+            print("     camera —  never played in; open it to set the shot")
+            continue
+        try:
+            key = producer.pack_id(config_mod.replace_render(config, world=world.name))
+        except producer.RenderError:
+            continue
+        built = config.library.root / key
+        count = len(list(built.rglob("*.webp"))) if built.is_dir() else 0
+        print(f"     builds {key}  ({count or 'no'} images)")
+    print("\n * is the world `mcwall world render` uses")
+    return 0
 
 
 def cmd_edit(args) -> int:
@@ -339,6 +360,7 @@ def _check_config() -> int:
 
 
 def cmd_verify(args) -> int:
+    """Check a library against its own manifest."""
     config = _load()
     root = config.library.root
     if not (root / "manifest.json").exists():
@@ -390,7 +412,7 @@ def cmd_use(args) -> int:
         print("following the root manifest again — a completed render decides")
         return 0
 
-    if not args.build:
+    if not args.path:
         print(f"reading from: {active or '(nothing)'}\n")
         for build in library_builds(root, active):
             mark = "*" if build.active else " "
@@ -401,17 +423,17 @@ def cmd_use(args) -> int:
         print("\npass a name, or any path holding a manifest.json")
         return 0
 
-    candidate = Path(args.build).expanduser()
+    candidate = Path(args.path).expanduser()
     if (candidate / "manifest.json").exists():
         chosen_path, chosen = candidate, None
     else:
         found = library_builds(root, active)
-        matches = [b for b in found if b.pack_id == args.build] or [
-            b for b in found if args.build in b.pack_id
+        matches = [b for b in found if b.pack_id == args.path] or [
+            b for b in found if args.path in b.pack_id
         ]
         if len(matches) != 1:
             which = ", ".join(b.pack_id for b in matches) or "nothing"
-            print(f"{args.build!r} matches {which}")
+            print(f"{args.path!r} matches {which}")
             return 1
         chosen = matches[0]
         chosen_path = chosen.path
@@ -461,7 +483,11 @@ def build_parser() -> argparse.ArgumentParser:
     """
     parser = argparse.ArgumentParser(prog="mcwall", description=__doc__)
     parser.add_argument("-v", "--verbose", action="store_true")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    # Hidden: the shells call this, people do not. Generated from this very
+    # parser, so a completion can never offer a command that is not here.
+    parser.add_argument("--completion", choices=("bash", "zsh"),
+                        help=argparse.SUPPRESS)
+    subparsers = parser.add_subparsers(dest="command")
 
     setup = subparsers.add_parser("setup", help="create the Prism render instance")
     setup.add_argument("--name", default="mc-wallpaper")
@@ -479,65 +505,95 @@ def build_parser() -> argparse.ArgumentParser:
                        help="detect the location again even if one is set")
     setup.set_defaults(func=cmd_setup)
 
+    world = subparsers.add_parser(
+        "world", help="the Minecraft saves renders are taken from"
+    )
+    world_actions = world.add_subparsers(dest="action", required=True)
 
+    world_list = world_actions.add_parser(
+        "list", help="every save, its seed, its camera and what it would build"
+    )
+    world_list.set_defaults(func=cmd_world_list)
 
-    render = subparsers.add_parser("render", help="fill the library in one game run")
-    render.add_argument("--limit", type=int, help="render at most N jobs")
-    render.add_argument("--world", help="render from this world instead of the configured one")
-    render.add_argument(
+    world_edit = world_actions.add_parser(
+        "edit", help="open the game to set the shot"
+    )
+    world_edit.add_argument("world", nargs="?",
+                            help="open straight into this save")
+    world_edit.set_defaults(func=cmd_edit)
+
+    world_render = world_actions.add_parser(
+        "render", help="fill a library from this world in one game run"
+    )
+    world_render.add_argument("world", nargs="?",
+                              help="render from this save instead of the configured one")
+    world_render.add_argument("--limit", type=int, help="render at most N jobs")
+    world_render.add_argument(
         "--sub-season",
         action="append",
         metavar="KEY",
         help="restrict to one sub-season, e.g. mid_autumn (repeatable)",
     )
-    render.add_argument(
+    world_render.add_argument(
         "--now",
         action="store_true",
         help="shorthand for --sub-season <the one it is right now>",
     )
-    render.add_argument("--dry-run", action="store_true")
-    render.add_argument("--windowed", action="store_true", help="show the game window")
-    render.add_argument("--force", action="store_true", help="render even on battery")
-    render.add_argument(
+    world_render.add_argument("--dry-run", action="store_true",
+                              help="plan the work without starting the game")
+    world_render.add_argument("--windowed", action="store_true",
+                              help="show the game window")
+    world_render.add_argument("--force", action="store_true",
+                              help="render even on battery")
+    world_render.add_argument(
         "--rebuild",
         action="store_true",
         help="re-render everything after a shaderpack settings change",
     )
-    render.set_defaults(func=cmd_render)
+    world_render.set_defaults(func=cmd_render)
 
-    select = subparsers.add_parser("select", help="print the asset for right now")
-    select.add_argument("--json", action="store_true")
-    select.add_argument("--at", help="ISO timestamp instead of now")
-    select.set_defaults(func=cmd_select)
-
-    apply_parser = subparsers.add_parser("apply", help="select, then set the wallpaper")
-    apply_parser.add_argument("--force", action="store_true")
-    apply_parser.set_defaults(func=cmd_apply)
-
-    edit = subparsers.add_parser(
-        "edit", help="open the instance to set the shot, then adopt the camera"
+    library = subparsers.add_parser(
+        "library", help="the built libraries, and which one is on screen"
     )
-    edit.add_argument("--world", help="which save to report (default: last played)")
-    edit.set_defaults(func=cmd_edit)
+    library_actions = library.add_subparsers(dest="action", required=True)
 
-
-
-
-
-
-    verify = subparsers.add_parser("verify", help="check the library against its manifest")
-    verify.add_argument("--decode", action="store_true", help="open every image")
-    verify.set_defaults(func=cmd_verify)
-
-    use = subparsers.add_parser(
-        "use", help="list built libraries, or choose the one on screen"
+    library_apply = library_actions.add_parser(
+        "apply", help="work out what to show now, and show it"
     )
-    use.add_argument("build", nargs="?", help="build id, or any unique part of it")
-    use.add_argument("--force", action="store_true",
-                     help="select it even though images are missing")
-    use.add_argument("--auto", action="store_true",
-                     help="unset library.path and follow completed renders again")
-    use.set_defaults(func=cmd_use)
+    library_apply.add_argument("path", nargs="?",
+                               help="read this library instead of the configured one")
+    library_apply.add_argument("--dry-run", action="store_true",
+                               help="print the choice without touching the wallpaper")
+    library_apply.add_argument("--json", action="store_true",
+                               help="the choice and why it was made")
+    library_apply.add_argument("--at", help="pretend it is this ISO instant")
+    library_apply.add_argument("--tick", type=int,
+                               help="force the time of day (0-23999)")
+    library_apply.add_argument("--weather", choices=[w.value for w in Weather],
+                               help="force the weather")
+    library_apply.add_argument("--season", help="force the sub-season, e.g. mid_winter")
+    library_apply.add_argument("--force", action="store_true",
+                               help="apply on low battery, and re-send an unchanged image")
+    library_apply.set_defaults(func=cmd_apply)
+
+    library_verify = library_actions.add_parser(
+        "verify", help="check a library against its manifest"
+    )
+    library_verify.add_argument("path", nargs="?")
+    library_verify.add_argument("--decode", action="store_true",
+                                help="open every image")
+    library_verify.set_defaults(func=cmd_verify)
+
+    library_use = library_actions.add_parser(
+        "use", help="point the config at a library"
+    )
+    library_use.add_argument("path", nargs="?",
+                             help="a build id, part of one, or any path with a manifest")
+    library_use.add_argument("--force", action="store_true",
+                             help="select it even though images are missing")
+    library_use.add_argument("--auto", action="store_true",
+                             help="unset library.path and follow completed renders")
+    library_use.set_defaults(func=cmd_use)
 
     tui = subparsers.add_parser(
         "tui", help="watch a render and drive the rest from one window"
@@ -550,6 +606,15 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.completion:
+        from .completion import render
+
+        print(render(build_parser(), args.completion), end="")
+        return 0
+    if not getattr(args, "func", None):
+        parser.print_help()
+        return 1
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(levelname)s %(message)s",

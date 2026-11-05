@@ -236,6 +236,7 @@ class OptionSpec:
     kind: str = "flag"  # flag | value | choice
     choices: tuple[str, ...] = ()
     default: object = None
+    positional: bool = False
 
     @property
     def name(self) -> str:
@@ -250,67 +251,95 @@ class CommandSpec:
 
 
 def command_specs(parser) -> list[CommandSpec]:
-    """Enumerate the CLI from its own parser.
+    """Enumerate the CLI from its own parser, including nested groups.
 
-    Reading argparse rather than restating the commands means the TUI gains a
-    command the moment the CLI does, and can never offer one that no longer
-    exists.
+    `mcwall world render` is one command as far as the TUI is concerned, so
+    the tree is flattened to its leaves. Reading argparse rather than
+    restating the commands means the TUI gains one the moment the CLI does,
+    and can never offer one that no longer exists.
     """
-    subparsers = next(
-        (a for a in parser._actions if getattr(a, "dest", None) == "command"), None
-    )
-    if subparsers is None or not getattr(subparsers, "choices", None):
-        return []
-
-    # `add_parser(help=...)` records the summary here, not on the subparser.
-    summaries = {
-        action.dest: (action.help or "")
-        for action in getattr(subparsers, "_choices_actions", [])
-    }
-
-    specs = []
-    for name, sub in subparsers.choices.items():
-        options = []
-        for action in sub._actions:
-            if not action.option_strings or action.dest == "help":
-                continue
-            if action.choices:
-                kind = "choice"
-            elif action.nargs == 0 or isinstance(action.const, bool):
-                kind = "flag"
-            else:
-                kind = "value"
-            options.append(
-                OptionSpec(
-                    flags=tuple(action.option_strings),
-                    help=action.help or "",
-                    kind=kind,
-                    choices=tuple(str(c) for c in (action.choices or ())),
-                    default=action.default,
-                )
-            )
-        specs.append(
-            CommandSpec(
-                name=name,
-                help=summaries.get(name) or sub.description or "",
-                options=tuple(options),
-            )
-        )
+    specs: list[CommandSpec] = []
+    _walk(parser, (), specs)
     return sorted(specs, key=lambda s: s.name)
 
 
-def build_argv(command: str, values: dict) -> list[str]:
+def _subparsers_action(parser):
+    for action in parser._actions:
+        if getattr(action, "choices", None) and hasattr(action, "add_parser"):
+            return action
+    return None
+
+
+def _walk(parser, prefix: tuple[str, ...], specs: list[CommandSpec]) -> None:
+    group = _subparsers_action(parser)
+    if group is None:
+        return
+    summaries = {
+        action.dest: (action.help or "")
+        for action in getattr(group, "_choices_actions", [])
+    }
+    for name, sub in group.choices.items():
+        path = prefix + (name,)
+        if _subparsers_action(sub) is not None:
+            _walk(sub, path, specs)
+            continue
+        specs.append(
+            CommandSpec(
+                name=" ".join(path),
+                help=summaries.get(name) or sub.description or "",
+                options=tuple(_options(sub)),
+            )
+        )
+
+
+def _options(parser) -> list[OptionSpec]:
+    found = []
+    for action in parser._actions:
+        if action.dest == "help":
+            continue
+        if not action.option_strings:
+            # A positional, which the form offers as an ordinary value.
+            found.append(OptionSpec(
+                flags=(action.dest,), help=action.help or "",
+                kind="value", positional=True,
+            ))
+            continue
+        if action.choices:
+            kind = "choice"
+        elif action.nargs == 0 or isinstance(action.const, bool):
+            kind = "flag"
+        else:
+            kind = "value"
+        found.append(OptionSpec(
+            flags=tuple(action.option_strings),
+            help=action.help or "",
+            kind=kind,
+            choices=tuple(str(c) for c in (action.choices or ())),
+            default=action.default,
+        ))
+    return found
+
+
+def build_argv(spec: CommandSpec, values: dict) -> list[str]:
     """Turn a filled-in form into the argv the CLI would have been given.
 
-    Values that match the option's default are left out, so the command shown
-    to the user is the short one they would have typed.
+    Positionals come first and unset ones are simply absent, which is why
+    every positional in this CLI is optional. Anything left at its default is
+    omitted, so the command shown is the short one you would have typed.
     """
-    argv = [command]
-    for flag, value in values.items():
+    argv = spec.name.split()
+    for option in spec.options:
+        if not option.positional:
+            continue
+        value = values.get(option.flags[-1])
+        if value not in (None, "", False):
+            argv.append(str(value))
+    for option in spec.options:
+        if option.positional:
+            continue
+        flag = option.flags[-1]
+        value = values.get(flag)
         if value is None or value is False or value == "":
             continue
-        if value is True:
-            argv.append(flag)
-        else:
-            argv += [flag, str(value)]
+        argv.append(flag) if value is True else argv.extend([flag, str(value)])
     return argv

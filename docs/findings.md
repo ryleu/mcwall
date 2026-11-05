@@ -229,7 +229,7 @@ missing binary otherwise surfaces as a bare `FileNotFoundError` from inside
 
 ## The wallpaper daemon
 
-`mcwall apply` fails rather than starting a daemon. `mcwall.service` is a
+`mcwall library apply` fails rather than starting a daemon. `mcwall.service` is a
 `oneshot`, and systemd's default `KillMode=control-group` reaps the whole
 cgroup when it exits — `start_new_session` makes a new session, not a new
 cgroup — so a daemon started from inside dies seconds later and every tick
@@ -271,7 +271,7 @@ used to hold, and leaves almost no tail once the game exits. The other half of
 the cores stays with the game: chunk generation is CPU-bound, and a capture
 waiting on terrain costs eleven seconds while an encode waiting its turn costs
 about one. An interrupted run still leaves its backlog for the next
-`mcwall render`.
+`mcwall world render`.
 
 ## Deviations from the original plan
 

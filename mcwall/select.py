@@ -70,11 +70,20 @@ class Mode1Selector:
         )
 
     def select(self, now: datetime, conditions: Conditions) -> Choice:
-        wanted = self.target_cell(now, conditions)
+        return self.resolve(
+            self.target_cell(now, conditions), on_ac=conditions.on_ac
+        )
 
+    def resolve(self, wanted: GridCell, on_ac: bool = False) -> Choice:
+        """Find the best available asset for a cell.
+
+        Split out from `select` so a caller can ask for a cell it chose
+        itself — forcing a season or a weather by hand — and still get the
+        same substitution rules rather than a bare "not present".
+        """
         want_loop = (
             self.allow_loops
-            and conditions.on_ac
+            and on_ac
             and wanted.weather is not Weather.CLEAR
         )
         if want_loop:

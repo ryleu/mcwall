@@ -46,12 +46,26 @@
         format = "pyproject";
         nativeBuildInputs = [ pkgs.python3Packages.setuptools ];
         propagatedBuildInputs = pythonDeps pkgs.python3Packages;
-        nativeCheckInputs = [ pkgs.python3Packages.pytest ];
+        nativeCheckInputs = [
+          pkgs.python3Packages.pytest
+          # The completion tests drive a real shell. Plain `bash` is built
+          # without compgen, and zsh is needed to syntax-check `_mcwall`.
+          pkgs.bashInteractive
+          pkgs.zsh
+        ];
         checkPhase = ''
           runHook preCheck
           PYTHONPATH=$PWD:$PYTHONPATH pytest -q tests
           runHook postCheck
         '';
+        # Completions are generated from the parser the CLI itself uses, so
+        # they cannot offer a command that does not exist.
+        postInstall = ''
+          mkdir -p $out/share/bash-completion/completions $out/share/zsh/site-functions
+          $out/bin/mcwall --completion bash > $out/share/bash-completion/completions/mcwall
+          $out/bin/mcwall --completion zsh > $out/share/zsh/site-functions/_mcwall
+        '';
+
         # Tools the orchestrator shells out to at render and display time.
         # prismlauncher is deliberately absent: the render drives the user's
         # own authenticated launcher, found on PATH, and shadowing it with a
@@ -100,6 +114,10 @@
           # Display path
           swww # NOTE: current nixpkgs ships this as awww/awww-daemon
           mpvpaper
+
+          # Shells the completion tests drive. Plain bash has no compgen.
+          bashInteractive
+          zsh
 
           # Misc
           jq
