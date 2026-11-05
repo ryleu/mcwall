@@ -18,7 +18,7 @@ from . import deband as deband_mod
 from . import instance as instance_mod
 from . import producer, scout, session, weather
 from .grid import Weather
-from .library import Library, Manifest
+from .library import Library, Manifest, builds as library_builds
 from .seasons import SubSeason
 from .power import read as read_power
 from .select import Conditions, Mode1Selector, NoAssetAvailable
@@ -36,11 +36,25 @@ def _require_location(config: config_mod.Config) -> tuple[float, float]:
     return config.location.latitude, config.location.longitude
 
 
+def _library_dir(config: config_mod.Config) -> Path:
+    """Where the display path reads from.
+
+    A configured `library.path` wins, so a finished render cannot change what
+    is on screen; otherwise the root, where a completed build promotes itself.
+    """
+    return config.library.path or config.library.root
+
+
 def _open_library(config: config_mod.Config) -> Library:
-    root = config.library.root
-    if not (root / "manifest.json").exists():
-        raise SystemExit(f"no library at {root} — run `mcwall render` first")
-    return Library.open(root)
+    where = _library_dir(config)
+    if not (where / "manifest.json").exists():
+        hint = (
+            "run `mcwall render` first"
+            if where == config.library.root
+            else "check library.path in the config"
+        )
+        raise SystemExit(f"no library at {where} — {hint}")
+    return Library.open(where)
 
 
 # ------------------------------------------------------------------ commands
@@ -459,6 +473,16 @@ def cmd_gallery(args) -> int:
     return 0
 
 
+def _check_config() -> int:
+    """Report config problems that normal loading only warns about."""
+    try:
+        config_mod.load(strict=True)
+    except ValueError as problem:
+        print(f"config: {problem}")
+        return 1
+    return 0
+
+
 def cmd_verify(args) -> int:
     config = _load()
     root = config.library.root
@@ -491,7 +515,78 @@ def cmd_verify(args) -> int:
         for path, why in broken[:20]:
             print(f"  {path}: {why}")
 
-    return 0 if not missing and not broken else 1
+    bad_config = _check_config()
+    return 0 if not missing and not broken and not bad_config else 1
+
+
+def cmd_use(args) -> int:
+    """Point the config at a library, or list the ones available."""
+    config = _load()
+    root = config.library.root
+    active = _library_dir(config)
+    if active == root:
+        try:
+            active = root / Manifest.read(root).pack_id
+        except (OSError, ValueError):
+            active = None
+
+    if args.auto:
+        config_mod.update("library", {"path": ""})
+        print("following the root manifest again — a completed render decides")
+        return 0
+
+    if not args.build:
+        print(f"reading from: {active or '(nothing)'}\n")
+        for build in library_builds(root, active):
+            mark = "*" if build.active else " "
+            state = "complete" if build.complete else f"{build.present}/{build.total}"
+            if not build.switchable:
+                state += "  (no manifest — cannot be selected)"
+            print(f" {mark} {build.pack_id:<72} {state}")
+        print("\npass a name, or any path holding a manifest.json")
+        return 0
+
+    candidate = Path(args.build).expanduser()
+    if (candidate / "manifest.json").exists():
+        chosen_path, chosen = candidate, None
+    else:
+        found = library_builds(root, active)
+        matches = [b for b in found if b.pack_id == args.build] or [
+            b for b in found if args.build in b.pack_id
+        ]
+        if len(matches) != 1:
+            which = ", ".join(b.pack_id for b in matches) or "nothing"
+            print(f"{args.build!r} matches {which}")
+            return 1
+        chosen = matches[0]
+        chosen_path = chosen.path
+        if not chosen.switchable:
+            print(f"{chosen.pack_id} has no manifest, so nothing knows what its "
+                  f"images are of; it cannot be selected")
+            return 1
+        if not chosen.complete and not args.force:
+            print(f"{chosen.pack_id} has {chosen.present} of {chosen.total} "
+                  f"images; the wallpaper would have gaps. "
+                  f"Pass --force to use it anyway.")
+            return 1
+
+    # Prove it opens before writing it into the config, so a bad path is an
+    # error here rather than a failing timer every five minutes.
+    try:
+        library = Library.open(chosen_path)
+    except (OSError, ValueError) as problem:
+        print(f"{chosen_path} is not a readable library: {problem}")
+        return 1
+    missing = len(library.missing_stills())
+    if missing and not args.force:
+        print(f"{chosen_path} is missing {missing} images; pass --force to use it")
+        return 1
+
+    config_mod.update("library", {"path": str(chosen_path)})
+    print(f"now reading from {chosen_path}")
+    if missing:
+        print(f"warning: {missing} images missing")
+    return 0
 
 
 def cmd_tui(args) -> int:
@@ -610,6 +705,16 @@ def build_parser() -> argparse.ArgumentParser:
     verify = subparsers.add_parser("verify", help="check the library against its manifest")
     verify.add_argument("--decode", action="store_true", help="open every image")
     verify.set_defaults(func=cmd_verify)
+
+    use = subparsers.add_parser(
+        "use", help="list built libraries, or choose the one on screen"
+    )
+    use.add_argument("build", nargs="?", help="build id, or any unique part of it")
+    use.add_argument("--force", action="store_true",
+                     help="select it even though images are missing")
+    use.add_argument("--auto", action="store_true",
+                     help="unset library.path and follow completed renders again")
+    use.set_defaults(func=cmd_use)
 
     tui = subparsers.add_parser(
         "tui", help="watch a render and drive the rest from one window"

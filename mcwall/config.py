@@ -8,8 +8,9 @@ windows, shaderpack, resolution — is config, never code.
 from __future__ import annotations
 
 import os
+import logging
 import tomllib
-from dataclasses import dataclass, field, replace
+from dataclasses import fields as dataclass_fields, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,8 @@ def _xdg(var: str, default: str) -> Path:
 
 CONFIG_DIR = _xdg("XDG_CONFIG_HOME", ".config") / "mcwall"
 STATE_DIR = _xdg("XDG_STATE_HOME", ".local/state") / "mcwall"
+log = logging.getLogger(__name__)
+
 DATA_DIR = _xdg("XDG_DATA_HOME", ".local/share") / "mcwall"
 
 CONFIG_PATH = Path(os.environ.get("MCWALL_CONFIG") or CONFIG_DIR / "config.toml")
@@ -36,7 +39,14 @@ class Location:
 
 @dataclass(frozen=True)
 class LibraryConfig:
+    # Where builds are written, and where the display path looks when `path`
+    # is unset: the directory holding build directories and the manifest
+    # naming whichever one a render last completed.
     root: Path = DATA_DIR / "library"
+    # Point this at one library directory to read it directly — a build under
+    # `root`, or anywhere else, including a read-only /nix/store path. Set, it
+    # wins over `root`, so a finished render cannot change what is on screen.
+    path: Path | None = None
     width: int = 2880
     height: int = 1800
     image_format: str = "webp"
@@ -132,17 +142,43 @@ class Config:
         return slot_ticks(self.windows)
 
 
-def _merge(section: Any, data: dict[str, Any], renames: dict[str, str] | None = None):
+def _field_types(section: Any) -> dict[str, Any]:
+    return {f.name: f.type for f in dataclass_fields(section)}
+
+
+def _merge(
+    section: Any,
+    data: dict[str, Any],
+    renames: dict[str, str] | None = None,
+    strict: bool = False,
+):
     renames = renames or {}
     fields = {f for f in section.__dataclass_fields__}
     updates = {}
     for key, value in data.items():
         name = renames.get(key, key)
         if name not in fields:
-            raise ValueError(f"unknown config key {key!r} in [{type(section).__name__}]")
+            # Loud, but not fatal unless asked. The config is read both by
+            # this checkout and by whatever revision the system has
+            # installed, so an option added by the newer one would otherwise
+            # break every five-minute timer tick until the other caught up.
+            # `mcwall verify` loads strictly, which is where a typo surfaces
+            # as an error rather than a line in the journal.
+            if strict:
+                raise ValueError(
+                    f"unknown config key {key!r} in [{type(section).__name__}]"
+                )
+            log.warning(
+                "ignoring unknown config key %r in [%s]; "
+                "either it is a typo or this mcwall is older than the config",
+                key, type(section).__name__,
+            )
+            continue
         current = getattr(section, name)
-        if isinstance(current, Path):
-            value = Path(value).expanduser()
+        annotated = str(_field_types(section).get(name, ""))
+        if isinstance(current, Path) or (current is None and "Path" in annotated):
+            # An unset optional path has no value to infer the type from.
+            value = Path(value).expanduser() if value else None
         elif isinstance(current, tuple) and isinstance(value, list):
             value = tuple(value)
         updates[name] = value
@@ -152,12 +188,17 @@ def _merge(section: Any, data: dict[str, Any], renames: dict[str, str] | None = 
 SLOTS_PATH = CONFIG_DIR / "slots.toml"
 
 
-def load(path: Path | None = None) -> Config:
+def load(path: Path | None = None, strict: bool = False) -> Config:
     """Read config, falling back to defaults for anything absent.
 
     ``slots.toml`` beside the main config is overlaid last. `mcwall probe`
     writes the measured slot list there rather than rewriting a hand-edited
     config file, and it wins over any `[[grid.windows]]`.
+
+    With ``strict`` an unrecognised key is an error instead of a warning.
+    Normal loading is lenient so that a key written by a newer mcwall cannot
+    stop an older one from setting the wallpaper; `mcwall verify` loads
+    strictly, which is where a typo should be caught.
     """
     path = path or CONFIG_PATH
     config = Config()
@@ -174,16 +215,25 @@ def load(path: Path | None = None) -> Config:
         return config
 
     if "location" in raw:
-        config = replace(config, location=_merge(config.location, raw["location"]))
+        config = replace(
+            config, location=_merge(config.location, raw["location"], strict=strict)
+        )
     if "library" in raw:
         config = replace(
             config,
-            library=_merge(config.library, raw["library"], {"format": "image_format"}),
+            library=_merge(
+                config.library, raw["library"],
+                {"format": "image_format"}, strict=strict,
+            ),
         )
     if "render" in raw:
-        config = replace(config, render=_merge(config.render, raw["render"]))
+        config = replace(
+            config, render=_merge(config.render, raw["render"], strict=strict)
+        )
     if "display" in raw:
-        config = replace(config, display=_merge(config.display, raw["display"]))
+        config = replace(
+            config, display=_merge(config.display, raw["display"], strict=strict)
+        )
     if "grid" in raw:
         grid = raw["grid"]
         if "slot_ticks" in grid:

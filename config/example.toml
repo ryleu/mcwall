@@ -9,6 +9,14 @@ longitude = -86.5878
 source = "ip"            # "ip" or "manual"
 
 [library]
+# Where builds are written, and where the display path looks by default: the
+# directory of build directories, plus the manifest naming whichever build a
+# render last completed.
+# root = "~/.local/share/mcwall/library"
+# Point this at one library directory to read it directly, wherever it lives
+# — including a read-only /nix/store path. Set, it wins over root, so a
+# finished render cannot change what is on screen. `mcwall use` writes it.
+path = ""
 root = "~/.local/share/mcwall/library"
 # Match your monitor's native pixel size: `hyprctl monitors -j`.
 width = 2880

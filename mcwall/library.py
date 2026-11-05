@@ -42,7 +42,9 @@ class GridCell:
     tick: int
 
     def relative_path(self, pack_id: str, suffix: str, loop: bool = False) -> Path:
-        parts = [pack_id]
+        # An empty pack_id means the manifest sits in the build directory
+        # itself, so the images are directly beneath it.
+        parts = [pack_id] if pack_id else []
         if loop:
             parts.append("loops")
         parts += [self.sub_season.key, self.weather.value, f"{self.tick}{suffix}"]
@@ -143,6 +145,63 @@ class Manifest:
         return cls(**{k: v for k, v in data.items() if k in known})
 
 
+@dataclass(frozen=True)
+class BuildSummary:
+    """One build directory, as the chooser sees it."""
+
+    pack_id: str
+    path: Path
+    present: int
+    total: int
+    active: bool
+    manifest: "Manifest | None" = None
+
+    @property
+    def complete(self) -> bool:
+        return bool(self.total) and self.present == self.total
+
+    @property
+    def switchable(self) -> bool:
+        """A build with no manifest cannot describe itself, so it cannot be
+        made active — nothing would know the grid its images belong to."""
+        return self.manifest is not None
+
+
+def builds(root: Path, active: Path | None = None) -> list[BuildSummary]:
+    """Every build sitting under ``root``, in name order.
+
+    Reads each build's own manifest rather than the active one, so a library
+    that is not currently on screen still reports its real size. ``active`` is
+    the directory the display path is reading, whatever chose it.
+    """
+    root = Path(root)
+    active = Path(active).resolve() if active else None
+
+    found = []
+    for path in sorted(p for p in root.iterdir() if p.is_dir()):
+        if path.name.startswith("."):
+            continue
+        manifest = None
+        try:
+            manifest = Manifest.read(path)
+        except (OSError, ValueError):
+            pass
+        suffix = f".{manifest.image_format}" if manifest else ".webp"
+        total = len(manifest.cells()) if manifest else 0
+        present = sum(1 for p in path.rglob(f"*{suffix}") if p.is_file())
+        if not present and not manifest:
+            continue  # not a build directory at all
+        found.append(BuildSummary(
+            pack_id=manifest.pack_id if manifest else path.name,
+            path=path,
+            present=present,
+            total=total,
+            active=active is not None and path.resolve() == active,
+            manifest=manifest,
+        ))
+    return found
+
+
 class Library:
     """Read-side view of a library directory.
 
@@ -159,6 +218,8 @@ class Library:
     ):
         self.root = Path(root)
         self.manifest = manifest
+        # Set properly by `open`; a hand-built Library keeps the old layout.
+        self.nested = True
         self.stills = stills if stills is not None else set()
         self.loops = loops if loops is not None else set()
 
@@ -168,8 +229,18 @@ class Library:
 
     @classmethod
     def open(cls, root: Path) -> "Library":
-        manifest = Manifest.read(Path(root))
+        """Open the library whose manifest is in ``root``.
+
+        Two layouts are possible and both are read the same way. A manifest at
+        the top of the library tree describes a build in a subdirectory named
+        after it; a manifest inside a build directory describes the images
+        beside it. The second is what lets a config point straight at one
+        library, wherever it lives.
+        """
+        root = Path(root)
+        manifest = Manifest.read(root)
         library = cls(root, manifest)
+        library.nested = (root / manifest.pack_id).is_dir()
         library.rescan()
         return library
 
@@ -181,7 +252,8 @@ class Library:
 
     def path_for(self, cell: GridCell, loop: bool = False) -> Path:
         suffix = ".mp4" if loop else self.suffix
-        return self.root / cell.relative_path(self.manifest.pack_id, suffix, loop)
+        prefix = self.manifest.pack_id if self.nested else ""
+        return self.root / cell.relative_path(prefix, suffix, loop)
 
     def has_still(self, cell: GridCell) -> bool:
         return cell in self.stills

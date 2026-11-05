@@ -41,12 +41,26 @@ def test_the_example_actually_loads():
     assert config.library.deband is True
 
 
-def test_unknown_keys_are_rejected_rather_than_ignored(tmp_path):
-    """A typo in a config file should be loud, not silently defaulted."""
+def test_a_strict_load_rejects_an_unknown_key(tmp_path):
+    """A typo should be findable — `mcwall verify` loads this way."""
     path = tmp_path / "config.toml"
     path.write_text("[render]\nwarmup_framez = 60\n")
     with pytest.raises(ValueError, match="unknown config key"):
-        config_mod.load(path)
+        config_mod.load(path, strict=True)
+
+
+def test_a_normal_load_survives_an_unknown_key(tmp_path, caplog):
+    """Loading must not fail on an option a newer mcwall wrote.
+
+    The config has two readers of different ages — this checkout and whatever
+    revision the system installed. Adding `library.path` made the installed
+    one raise on every five-minute tick until it caught up.
+    """
+    path = tmp_path / "config.toml"
+    path.write_text("[render]\nwarmup_frames = 60\nwarmup_framez = 99\n")
+    config = config_mod.load(path)
+    assert config.render.warmup_frames == 60, "the keys it knows still apply"
+    assert "warmup_framez" in caplog.text
 
 
 def test_every_config_option_is_read_somewhere():
@@ -66,3 +80,34 @@ def test_every_config_option_is_read_somewhere():
             if field.name not in source:
                 unread.append(f"{section}.{field.name}")
     assert not unread, f"config options nothing reads: {unread}"
+
+
+def test_library_path_points_somewhere_or_nowhere(tmp_path, monkeypatch):
+    """`path` is optional, so there is no existing Path to infer the type from."""
+    from mcwall import config as config_mod
+
+    written = tmp_path / "config.toml"
+    written.write_text('[library]\npath = "/nix/store/abc-library"\n')
+    monkeypatch.setattr(config_mod, "CONFIG_PATH", written)
+    assert config_mod.load().library.path == Path("/nix/store/abc-library")
+
+    written.write_text('[library]\npath = ""\n')
+    assert config_mod.load().library.path is None, "empty means unset, not '.'"
+
+
+def test_an_unknown_key_is_ignored_not_fatal(tmp_path, monkeypatch, caplog):
+    """A newer mcwall's option must not break an older one's timer.
+
+    The config is read both by this checkout and by whatever revision the
+    system has installed. Adding `library.path` made the installed one raise
+    on every five-minute tick until it caught up.
+    """
+    from mcwall import config as config_mod
+
+    written = tmp_path / "config.toml"
+    written.write_text('[library]\nquality = 80\nan_option_from_the_future = 3\n')
+    monkeypatch.setattr(config_mod, "CONFIG_PATH", written)
+
+    loaded = config_mod.load()
+    assert loaded.library.quality == 80, "the keys it knows still apply"
+    assert "an_option_from_the_future" in caplog.text

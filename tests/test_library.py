@@ -136,3 +136,75 @@ def test_a_manifest_from_a_newer_build_still_reads(tmp_path, caplog):
     assert manifest.pack_id == "b"
     assert manifest.cells(), "the grid survived"
     assert "a_field_from_the_future" in caplog.text, "dropped silently"
+
+
+def _write_build(directory, pack_id, cells=2):
+    """A library directory holding its own manifest and images."""
+    from mcwall.grid import Weather
+    from mcwall.library import GridCell, Manifest
+    from mcwall.seasons import SubSeason
+
+    seasons = [s.key for s in SubSeason.all()][:1]
+    manifest = Manifest(
+        pack_id=pack_id, pack_name="p.zip", settings_hash="h",
+        width=16, height=9, image_format="webp",
+        sub_seasons=seasons, weathers=["clear"], ticks=list(range(cells)),
+    )
+    directory.mkdir(parents=True, exist_ok=True)
+    manifest.write(directory)
+    for cell in manifest.cells():
+        path = directory / GridCell(
+            SubSeason.from_key(cell.sub_season.key), Weather("clear"), cell.tick
+        ).relative_path("", ".webp")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"")
+    return manifest
+
+
+def test_a_manifest_beside_its_images_finds_them(tmp_path):
+    """What lets a config point straight at one library, wherever it lives."""
+    from mcwall.library import Library
+
+    _write_build(tmp_path / "build", "some-build")
+    library = Library.open(tmp_path / "build")
+
+    assert library.nested is False
+    assert library.missing_stills() == []
+    shown = library.path_for(library.manifest.cells()[0])
+    assert shown.parent.parent.parent == tmp_path / "build", shown
+    assert "some-build" not in str(shown.relative_to(tmp_path / "build"))
+
+
+def test_a_manifest_above_its_build_still_finds_them(tmp_path):
+    """The root layout, where a completed render promotes itself."""
+    from mcwall.library import Library, Manifest
+
+    manifest = _write_build(tmp_path / "some-build", "some-build")
+    manifest.write(tmp_path)
+
+    library = Library.open(tmp_path)
+    assert library.nested is True
+    assert library.missing_stills() == []
+
+
+def test_builds_marks_the_active_one_by_path(tmp_path):
+    from mcwall.library import builds
+
+    _write_build(tmp_path / "a", "a")
+    _write_build(tmp_path / "b", "b")
+
+    found = {b.pack_id: b for b in builds(tmp_path, active=tmp_path / "b")}
+    assert found["b"].active and not found["a"].active
+    assert all(b.complete and b.switchable for b in found.values())
+
+
+def test_a_build_without_a_manifest_cannot_be_selected(tmp_path):
+    from mcwall.library import builds
+
+    stray = tmp_path / "orphan" / "mid_autumn" / "clear"
+    stray.mkdir(parents=True)
+    (stray / "100.webp").write_bytes(b"")
+
+    orphan = next(b for b in builds(tmp_path) if b.pack_id == "orphan")
+    assert not orphan.switchable, "a library that cannot describe itself"
+    assert orphan.present == 1
