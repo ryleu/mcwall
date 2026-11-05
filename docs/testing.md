@@ -1,7 +1,7 @@
 # Testing
 
 ```sh
-nix flake check              # 199 unit tests in a sandbox: no network, no game
+nix flake check              # 200 unit tests in a sandbox: no network, no game
 pytest -q tests              # the same, in the devShell
 pytest -m network            # adds the Skyfield ephemeris cross-check
 mcwall verify --decode       # opens every image in the library
@@ -21,7 +21,6 @@ Everything except the visual review runs without a person watching.
 | Conversion | `tests/test_producer.py` | Passing: parallel, atomic, skips existing, and a failure keeps its source PNGs so a rerun retries. |
 | Build identity | `tests/test_producer.py` | Passing: seed, camera, resolution and render distance each fork the library; warm-up frames do not. A world never played in refuses to plan rather than rendering spawn. |
 | Adopting an older library | `tests/test_producer.py` | Passing: the rename carries the manifest, and a library built with other shaderpack settings is left where it is. |
-| Slot placement | `tests/test_scout.py` | Passing: slots concentrate where the picture changes, spread evenly when it changes uniformly, and identical frames are rejected rather than guessed at. |
 | Promotion on completion | `tests/test_producer.py` | Passing: a half-finished build leaves the active manifest alone, a complete one replaces it, and a resumed run keeps its own build record. Confirmed live: a `--limit 1` run reported 1626 missing and left the forest library on screen. |
 | Conversion during a run | `tests/test_producer.py` | Passing: converts finished captures, never deletes the live staging tree, defers a failed encode to the final sweep, and the thread stops with the run. |
 | Launch profile | `tests/test_producer.py` | Passing: the active account wins, a sole account needs no flag, an ambiguous choice errors naming the options, and a configured name overrides all of it. |
@@ -34,7 +33,6 @@ Everything except the visual review runs without a person watching.
 | Daemon dependency | `tests/test_apply.py` | Passing: `apply` raises rather than spawning a daemon, and the error names the unit to start. |
 | home-manager module | Built as real `homeManagerConfiguration`s | `services.awww` and `services.swww` both yield `Requires=awww.service`; an explicit `daemonUnit` passes through; neither fails to evaluate. |
 | Still consistency | `scripts/repeatability.py` — renders one job twice, reports PSNR | **Not yet run.** |
-| Visual review | `mcwall scout`, `mcwall gallery` | Camera chosen (h30-west). Per-sub-season sheets and the twelve-season strip build; the look has not been signed off frame by frame. |
 | Loop seam | — | Not built; loops are a stretch goal, see `mode2-and-loops.md`. |
 
 ## What the tests actually pin down
@@ -50,6 +48,9 @@ Everything except the visual review runs without a person watching.
   for six fixture dates in both hemispheres, `select` must land on the slot
   nearest the vanilla horizon crossing. It also walks a day in five-minute
   steps and asserts the mapping is monotonic and covers exactly 24000 ticks.
+- `test_library.py` pins both library layouts: a manifest above its build
+  directory, and a manifest beside its own images — the second is what lets
+  `library.path` point anywhere, including a read-only store path.
 - `test_select.py` pins the fallback order — weather is substituted before
   time, season never — and asserts selection spawns no subprocess.
 - `test_producer.py` asserts the job manifest contains nothing

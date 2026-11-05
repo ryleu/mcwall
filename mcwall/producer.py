@@ -705,8 +705,8 @@ def run_jobs(
 ) -> dict:
     """Write a manifest, run the game once, and return the mod's final status.
 
-    Used by `render`, `scout` and `probe` alike — they differ only in which
-    jobs they hand over.
+    Takes the jobs it is given, so a caller that wants a subset — one still,
+    one sub-season — hands over fewer rather than calling something else.
     """
     if not force and not read_power().on_ac and not config.render.allow_on_battery:
         raise RenderError("on battery — refusing to run the game (use --force)")

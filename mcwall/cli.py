@@ -6,7 +6,6 @@ import argparse
 import json
 import logging
 import os
-import shutil
 import sys
 import time
 from datetime import datetime, timezone
@@ -14,10 +13,8 @@ from pathlib import Path
 
 from . import apply as apply_mod
 from . import config as config_mod
-from . import deband as deband_mod
 from . import instance as instance_mod
-from . import producer, scout, session, weather
-from .grid import Weather
+from . import producer, session, weather
 from .library import Library, Manifest, builds as library_builds
 from .seasons import SubSeason
 from .power import read as read_power
@@ -58,42 +55,6 @@ def _open_library(config: config_mod.Config) -> Library:
 
 
 # ------------------------------------------------------------------ commands
-
-
-def cmd_init(args) -> int:
-    config = _load()
-    if args.latitude is not None and args.longitude is not None:
-        latitude, longitude, source = args.latitude, args.longitude, "manual"
-    else:
-        latitude, longitude = weather.detect_location()
-        source = "ip"
-    config_mod.save_location(latitude, longitude, source)
-    print(f"location: {latitude:.4f}, {longitude:.4f} ({source})")
-    print(f"written to {config_mod.CONFIG_PATH}")
-
-    resolution = producer.monitor_resolution()
-    if resolution and resolution != (config.library.width, config.library.height):
-        print(
-            f"note: focused monitor is {resolution[0]}x{resolution[1]}, "
-            f"library is configured for {config.library.width}x{config.library.height}"
-        )
-    return 0
-
-
-def cmd_plan(args) -> int:
-    config = _load()
-    plan = producer.build_plan(config)
-    print(f"grid:    {plan.total} cells ({len(config.ticks())} ticks x 3 weather x 12 sub-seasons)")
-    print(f"missing: {len(plan.missing)}")
-    if args.json:
-        print(json.dumps(plan.jobs, indent=2))
-    elif plan.jobs:
-        by_world: dict[str, int] = {}
-        for job in plan.jobs:
-            by_world[job["world"]] = by_world.get(job["world"], 0) + 1
-        for world, count in sorted(by_world.items()):
-            print(f"  {world}: {count} jobs")
-    return 0
 
 
 def cmd_render(args) -> int:
@@ -302,8 +263,37 @@ def _report(config, world_dir) -> int:
 
 
 def cmd_setup(args) -> int:
-    """Create or refresh the dedicated Prism render instance."""
-    return instance_mod.setup(args)
+    """Create the render instance, and settle the location while we are here.
+
+    Location used to be its own command, run once and never again. It is one
+    of the two things that must be true before anything works, so it belongs
+    in the command you already have to run.
+    """
+    status = instance_mod.setup(args)
+
+    config = _load()
+    known = config.location.latitude is not None
+    if args.latitude is not None and args.longitude is not None:
+        latitude, longitude, source = args.latitude, args.longitude, "manual"
+    elif known and not args.relocate:
+        print(f"location: {config.location.latitude:.4f}, "
+              f"{config.location.longitude:.4f} (already set)")
+        latitude = None
+    else:
+        latitude, longitude = weather.detect_location()
+        source = "ip"
+
+    if latitude is not None:
+        config_mod.save_location(latitude, longitude, source)
+        print(f"location: {latitude:.4f}, {longitude:.4f} ({source})")
+
+    resolution = producer.monitor_resolution()
+    if resolution and resolution != (config.library.width, config.library.height):
+        print(
+            f"note: focused monitor is {resolution[0]}x{resolution[1]}, "
+            f"library is configured for {config.library.width}x{config.library.height}"
+        )
+    return status
 
 
 def cmd_edit(args) -> int:
@@ -336,141 +326,6 @@ def cmd_edit(args) -> int:
         return _report(config, world_dir)
     except session.NoPlayerPosition as error:
         raise SystemExit(str(error))
-
-
-def cmd_adopt(args) -> int:
-    """Show the shot a world holds, without opening the game."""
-    config = _load()
-    world_dir = (
-        session.saves_dir(producer.game_dir(config)) / args.world
-        if args.world
-        else session.latest_world(producer.game_dir(config))
-    )
-    if world_dir is None or not world_dir.exists():
-        raise SystemExit("no world found in the render instance")
-    try:
-        return _report(config, world_dir)
-    except session.NoPlayerPosition as error:
-        raise SystemExit(str(error))
-
-
-def cmd_scout(args) -> int:
-    """Render candidate camera spots and tile them for a human to choose."""
-    config = _load()
-    located = producer.located_spot(config)
-    surface = float(located["surface_y"]) if located else 68.0
-    if located:
-        print(f"camera anchor: x={located['x']} z={located['z']}, ground at y={surface:.0f}")
-    else:
-        print("no located.json from a previous run — assuming ground at y=68")
-    candidates = scout.default_candidates(surface)
-    staging = config.library.root / ".scout"
-    jobs = scout.scout_jobs(
-        config,
-        candidates,
-        tick=args.tick,
-        sub_season=SubSeason.from_key(args.sub_season),
-        weather=Weather(args.weather),
-    )
-    status = producer.run_jobs(config, jobs, staging, force=args.force)
-    print(f"rendered {status.get('completed', 0)} of {len(jobs)} candidates")
-
-    images = sorted((staging / "scout").glob("*.png"))
-    if not images:
-        raise SystemExit("no candidate frames were produced")
-    sheet = scout.contact_sheet(images, config.library.root / "scout-sheet.png")
-    print(f"contact sheet: {sheet}")
-    print("frames:")
-    for image in images:
-        print(f"  {image}")
-    print("\npick one, then fly there with `mcwall edit` — the world holds the shot")
-    return 0
-
-
-def cmd_probe(args) -> int:
-    """Sweep the whole day, then place the time slots by visual change."""
-    config = _load()
-    staging = config.library.root / ".probe"
-    jobs = scout.probe_jobs(config, step=args.step)
-    status = producer.run_jobs(config, jobs, staging, force=args.force)
-    print(f"rendered {status.get('completed', 0)} of {len(jobs)} probe frames")
-
-    frames = []
-    for image in sorted((staging / "probe").glob("*.png")):
-        frames.append((int(image.stem), image))
-    if len(frames) < args.slots:
-        raise SystemExit(f"only {len(frames)} probe frames; need at least {args.slots}")
-
-    ticks = scout.even_change_slots(frames, slots=args.slots)
-    print(f"slot ticks ({len(ticks)}): {ticks}")
-
-    if args.write:
-        target = scout.write_slot_config(ticks, config_mod.SLOTS_PATH)
-        print(f"written to {target} — it is overlaid on the config automatically")
-    sheet = scout.contact_sheet(
-        [path for _, path in frames][:48], config.library.root / "probe-sheet.png", columns=8
-    )
-    print(f"contact sheet: {sheet}")
-    return 0
-
-
-def cmd_deband(args) -> int:
-    """Repair banding in an existing library, non-destructively."""
-    config = _load()
-    root = config.library.root
-    pack = root / producer.pack_id(config)
-    if not pack.is_dir():
-        raise SystemExit(f"no rendered images at {pack}")
-
-    staged = root / deband_mod.STAGE_DIR / producer.pack_id(config)
-    settings = deband_mod.DebandSettings(
-        strength=args.strength, radius=args.radius, near_lossless=args.near_lossless
-    )
-
-    before = sum(p.stat().st_size for p in pack.rglob("*.webp"))
-    count, written = deband_mod.deband_tree(pack, staged, settings)
-
-    staged_count = len(list(staged.rglob("*.webp")))
-    source_count = len(list(pack.rglob("*.webp")))
-    if staged_count != source_count:
-        raise SystemExit(
-            f"refusing to swap: debanded {staged_count} images but the library "
-            f"has {source_count}; the originals are untouched"
-        )
-
-    print(f"debanded {count} images")
-    print(f"  before: {before / 1e9:.2f} GB")
-    print(f"  after:  {written / 1e9:.2f} GB")
-
-    if args.dry_run:
-        print(f"\n--dry-run: left the new tree in {staged}, library untouched")
-        return 0
-
-    backup = deband_mod.swap_in(pack, staged)
-    shutil.rmtree(root / deband_mod.STAGE_DIR, ignore_errors=True)
-    print(f"\nswapped in. originals kept at {backup}")
-    print("delete that directory once you are happy with the result")
-    return 0
-
-
-def cmd_gallery(args) -> int:
-    """Contact sheets for the look review: a day per sub-season, plus a strip."""
-    config = _load()
-    library = _open_library(config)
-    out_dir = config.library.root / "gallery"
-    weather = Weather(args.weather)
-
-    sheets = scout.sub_season_sheets(library, out_dir, weather)
-    print(f"{len(sheets)} per-sub-season sheets in {out_dir}")
-    for sheet in sheets:
-        print(f"  {sheet.name}")
-
-    strip = scout.season_strip(library, out_dir, args.tick, weather)
-    if strip:
-        print(f"\nall twelve sub-seasons at tick {args.tick}: {strip}")
-    else:
-        print(f"\nno images at tick {args.tick} to build the season strip from")
-    return 0
 
 
 def _check_config() -> int:
@@ -618,16 +473,13 @@ def build_parser() -> argparse.ArgumentParser:
                        help="also reset instance.cfg, options.txt and iris.properties")
     setup.add_argument("--no-build", action="store_true",
                        help="do not build the capture mod if it is missing")
+    setup.add_argument("--latitude", type=float, help="skip IP geolocation")
+    setup.add_argument("--longitude", type=float)
+    setup.add_argument("--relocate", action="store_true",
+                       help="detect the location again even if one is set")
     setup.set_defaults(func=cmd_setup)
 
-    init = subparsers.add_parser("init", help="detect location and write config")
-    init.add_argument("--latitude", type=float)
-    init.add_argument("--longitude", type=float)
-    init.set_defaults(func=cmd_init)
 
-    plan = subparsers.add_parser("plan", help="list the grid cells still missing")
-    plan.add_argument("--json", action="store_true")
-    plan.set_defaults(func=cmd_plan)
 
     render = subparsers.add_parser("render", help="fill the library in one game run")
     render.add_argument("--limit", type=int, help="render at most N jobs")
@@ -668,39 +520,10 @@ def build_parser() -> argparse.ArgumentParser:
     edit.add_argument("--world", help="which save to report (default: last played)")
     edit.set_defaults(func=cmd_edit)
 
-    adopt = subparsers.add_parser(
-        "adopt", help="show the shot a world holds, without opening the game"
-    )
-    adopt.add_argument("--world")
-    adopt.set_defaults(func=cmd_adopt)
 
-    scout_parser = subparsers.add_parser("scout", help="render camera candidates to choose from")
-    scout_parser.add_argument("--tick", type=int, default=1000)
-    scout_parser.add_argument("--sub-season", default="mid_summer")
-    scout_parser.add_argument("--weather", default="clear", choices=[w.value for w in Weather])
-    scout_parser.add_argument("--force", action="store_true")
-    scout_parser.set_defaults(func=cmd_scout)
 
-    probe = subparsers.add_parser("probe", help="sweep the day and re-place the time slots")
-    probe.add_argument("--step", type=int, default=100, help="ticks between probe frames")
-    probe.add_argument("--slots", type=int, default=48)
-    probe.add_argument("--write", action="store_true", help="write the slot list to config")
-    probe.add_argument("--force", action="store_true")
-    probe.set_defaults(func=cmd_probe)
 
-    deband = subparsers.add_parser(
-        "deband", help="repair banding in an existing library (near-lossless)"
-    )
-    deband.add_argument("--strength", type=float, default=3.0)
-    deband.add_argument("--radius", type=int, default=16)
-    deband.add_argument("--near-lossless", type=int, default=60)
-    deband.add_argument("--dry-run", action="store_true", help="build it but do not swap")
-    deband.set_defaults(func=cmd_deband)
 
-    gallery = subparsers.add_parser("gallery", help="contact sheets for the look review")
-    gallery.add_argument("--weather", default="clear", choices=[w.value for w in Weather])
-    gallery.add_argument("--tick", type=int, default=1583, help="moment for the season strip")
-    gallery.set_defaults(func=cmd_gallery)
 
     verify = subparsers.add_parser("verify", help="check the library against its manifest")
     verify.add_argument("--decode", action="store_true", help="open every image")

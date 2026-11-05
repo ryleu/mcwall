@@ -9,7 +9,7 @@ Python every five minutes.
 ```
         PRODUCER (runs once)                    DISPLAY (every 5 minutes)
 
-  mcwall plan ──► job manifest                 mcwall select ──► mcwall apply
+  mcwall render ──► job manifest               mcwall select ──► mcwall apply
         │                                            │                 │
         ▼                                            │                 ▼
   one headless Minecraft run                         │            swww / awww
@@ -56,7 +56,6 @@ cross-checked against Skyfield's ephemeris. See `docs/findings.md`.
 
 ```sh
 mcwall setup                 # instance, mods, shaderpack — builds the capture mod if needed
-mcwall init                  # detect location, write config
 mcwall edit                  # open the game: pick a world, a spot, your settings
 mcwall render --world <name> # render from that world, headless
 ```
@@ -92,8 +91,8 @@ it does only for a headless render. Opening the instance by hand — from
 `mcwall edit` or from Prism directly — is always just the game, even with a
 job manifest sitting there from the last render.
 
-`mcwall adopt` prints what a world would render as — its seed, its camera and
-the command to render it — without opening the game or writing anything.
+The TUI's worlds view lists every save with its seed and camera, so you can
+see what each would render as without opening the game.
 
 `locate_biome` is empty by default, because the biome search replaces the
 camera's x and z and would discard the framing you just set. Name biomes in it
@@ -160,11 +159,9 @@ render it watches is one it does not own.
 ### Building the library
 
 ```sh
-mcwall probe --write         # place the 48 time slots by measured sky change
-mcwall plan                  # what is missing
+mcwall render --dry-run      # what is missing, without starting the game
 mcwall render                # one headless game run fills it
 mcwall verify --decode       # every cell present and decodable
-mcwall gallery               # contact sheets for a look review
 ```
 
 `render` is resumable: outputs are written with an atomic rename and existing
@@ -175,8 +172,7 @@ stills if you want something usable before the whole grid is done.
 
 Measured on an AMD Radeon 840M at 2880x1800, render distance 16, with
 Complementary Unbound: **11.4 s per still**, so the whole grid is about
-**5.5 hours**. Warm-up frames are nearly the entire per-still cost, and
-`scripts/repeatability.py` is the lever if that needs to come down.
+**5.5 hours**. Warm-up frames are nearly the entire per-still cost.
 
 Images are debanded and written near-lossless, which costs about 8x the disk
 but is the only thing that fixes contouring in the dark frames — see
@@ -184,12 +180,9 @@ but is the only thing that fixes contouring in the dark frames — see
 1.9 MB per image. Set `[library].deband = false` for plain lossy WebP at
 ~0.43 GB, with visible banding at night.
 
-Budget disk for the run, not just the result: the mod writes lossless PNGs into
-`library/.staging` and they are converted once the batch finishes, so a full
-build needs about **16 GB free** on the way through.
-
-`mcwall scout` still exists for sweeping a grid of candidate heights and
-headings, if you would rather compare renders than fly around.
+Captures are encoded during the run on half the cores, so `library/.staging`
+only ever holds what the encoder has not caught up with rather than the whole
+grid of lossless PNGs.
 
 ## Showing it
 

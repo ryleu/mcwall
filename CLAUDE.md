@@ -267,6 +267,17 @@ Read the command list out of argparse rather than restating it. The TUI then
 gains a command the moment the CLI does, and `tests/test_tui.py` asserts the
 two sets are equal.
 
+## A command you never run is a claim you cannot check
+
+Seven of fifteen subcommands went. The telling evidence was not opinion but
+absence: `probe` had never written the `slots.toml` it exists to produce,
+`scout` had been superseded by flying to the shot in-game, and `deband` was a
+one-time migration already done. `plan` duplicated `render --dry-run`, and
+`init` was one command for one setting, folded into `setup`.
+
+Look for the artefact a command is supposed to leave behind. If it was never
+created, nobody has used the command, and nothing has been testing it either.
+
 ## Keep documentation in the present tense
 
 Comments and docs describe how the code is *now* and why. They do not narrate
