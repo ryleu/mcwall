@@ -97,3 +97,83 @@ def test_bash_completion_actually_completes(tmp_path):
 def test_an_unknown_shell_says_which_are_known():
     with pytest.raises(SystemExit, match="bash"):
         render(build_parser(), "fish")
+
+
+def stub_mcwall(directory, names):
+    """A fake `mcwall --complete` on PATH, so the test owns the data."""
+    binary = directory / "mcwall"
+    listing = "\n".join(names)
+    binary.write_text(f'#!/bin/sh\nprintf \'%s\\n\' "$@" >/dev/null\ncat <<\'EOF\'\n{listing}\nEOF\n')
+    binary.chmod(0o755)
+    return binary
+
+
+@pytest.mark.parametrize(
+    "command, expected",
+    [("world edit", {"Alpha\\ One", "Beta"}), ("library use", {"Alpha\\ One", "Beta"})],
+)
+def test_positionals_complete_to_names(tmp_path, command, expected):
+    """`library use <TAB>` offered only flags, which is the useless half.
+
+    A name containing a space is the case that breaks naive completion:
+    `compgen -W` splits it into two suggestions, neither of which exists.
+    """
+    binary = capable_bash()
+    if binary is None:
+        pytest.skip("no bash with compgen available")
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    stub_mcwall(bin_dir, ["Alpha One", "Beta"])
+
+    script = tmp_path / "mcwall.bash"
+    script.write_text(render(build_parser(), "bash"))
+    words = " ".join(f'"{w}"' for w in ["mcwall"] + command.split() + [""])
+    program = f"""
+    export PATH="{bin_dir}:$PATH"
+    source {script}
+    COMP_WORDS=({words})
+    COMP_CWORD={len(command.split()) + 1}
+    _mcwall
+    printf '%s\\n' "${{COMPREPLY[@]}}"
+    """
+    done = subprocess.run([binary, "-c", program], capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr
+    offered = set(done.stdout.split("\n"))
+    assert expected <= offered, f"{command}: got {sorted(offered)}"
+
+
+def test_a_path_positional_also_offers_directories(tmp_path):
+    """A library can live anywhere, so the shell has to help you walk there."""
+    binary = capable_bash()
+    if binary is None:
+        pytest.skip("no bash with compgen available")
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    stub_mcwall(bin_dir, [])
+    (tmp_path / "somewhere").mkdir()
+
+    script = tmp_path / "mcwall.bash"
+    script.write_text(render(build_parser(), "bash"))
+    program = f"""
+    export PATH="{bin_dir}:$PATH"
+    cd {tmp_path}
+    source {script}
+    COMP_WORDS=("mcwall" "library" "use" "some")
+    COMP_CWORD=3
+    _mcwall
+    printf '%s\\n' "${{COMPREPLY[@]}}"
+    """
+    done = subprocess.run([binary, "-c", program], capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr
+    assert "somewhere" in done.stdout
+
+
+@pytest.mark.parametrize("shell", ["bash", "zsh"])
+def test_positional_commands_ask_mcwall_for_names(shell):
+    script = render(build_parser(), shell)
+    assert "--complete worlds" in script
+    assert "--complete builds" in script
+    # Quietly: a prompt is no place for a traceback.
+    assert script.count("2>/dev/null") >= 2

@@ -1,7 +1,7 @@
 # Testing
 
 ```sh
-nix flake check              # 209 unit tests in a sandbox: no network, no game
+nix flake check              # 214 unit tests in a sandbox: no network, no game
 pytest -q tests              # the same, in the devShell
 pytest -m network            # adds the Skyfield ephemeris cross-check
 mcwall library verify --decode   # opens every image in the library
@@ -25,7 +25,7 @@ Everything except the visual review runs without a person watching.
 | Conversion during a run | `tests/test_producer.py` | Passing: converts finished captures, never deletes the live staging tree, defers a failed encode to the final sweep, and the thread stops with the run. |
 | Launch profile | `tests/test_producer.py` | Passing: the active account wins, a sole account needs no flag, an ambiguous choice errors naming the options, and a configured name overrides all of it. |
 | Render tool preflight | `tests/test_producer.py` | Passing: missing programs are named and the run refuses to start. The built wrapper was checked from an empty PATH — cage, wlr-randr, cwebp, ffmpeg, mpvpaper and pkill all resolve; prismlauncher deliberately does not. |
-| Shell completion | `tests/test_completion.py` | Passing: every command and flag appears in both scripts, both parse under their real shell, and the bash one is driven to check it actually replies. |
+| Shell completion | `tests/test_completion.py` | Passing: every command and flag appears in both scripts, both parse under their real shell, and the bash one is driven to check it actually replies — including a name containing a space, which naive word-splitting turns into two suggestions that do not exist. |
 | TUI subprocesses | `tests/test_tui.py` | Passing: a spawned command can import mcwall from a directory with no PYTHONPATH. Confirmed against the built package by driving its TUI through a pty and running `verify`. |
 | TUI | `tests/test_tui.py` | Passing: progress arithmetic, job neighbours, torn status files, and a pty smoke test that drives every view — verified to fail when the draw is broken. The command list is asserted equal to the CLI's own parser. |
 | Dry run writes nothing | `tests/test_producer.py` | Passing, and verified to fail when the old ordering is restored. |

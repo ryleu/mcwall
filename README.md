@@ -208,7 +208,9 @@ not override still comes from the real sun, season and sky, so
 
 Tab completion for bash and zsh is installed with the package. It is generated
 from the parser the CLI itself uses, so it cannot offer a command that does
-not exist:
+not exist, and it completes the arguments too — world names for
+`world edit`/`world render`, build ids and directories for the `library`
+commands:
 
 ```sh
 mcwall --completion zsh > ~/.zfunc/_mcwall    # if you are not installing the package

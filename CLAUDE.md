@@ -285,11 +285,17 @@ second description drifts. `mcwall --completion {bash,zsh}` renders it from
 `build_parser()`, the flake installs the output, and `tests/test_completion.py`
 drives the result in a real shell rather than trusting the text.
 
-Two traps, both found by running it rather than reading it: a case pattern
-containing a space (`world list)`) is a syntax error in both shells, and
-nixpkgs' plain `bash` is built without `compgen`, so every reply comes back
-empty and a completion test "passes" while completing nothing. The devShell
-and the check sandbox both carry `bashInteractive` now.
+Three traps, all found by running it rather than reading it: a case pattern
+containing a space (`world list)`) is a syntax error in both shells; nixpkgs'
+plain `bash` is built without `compgen`, so every reply comes back empty and
+a completion test "passes" while completing nothing; and `compgen -W` splits
+its word list on spaces, so a world called `New World` completes as two
+suggestions that do not exist. Names are read line by line and quoted with
+`printf %q`. The devShell and the check sandbox both carry `bashInteractive`.
+
+Arguments matter as much as commands: completing only flags is the useless
+half. Dynamic values come from `mcwall --complete {builds,worlds}`, which is
+hidden, quiet on failure, and the same code the commands themselves use.
 
 ## Keep documentation in the present tense
 

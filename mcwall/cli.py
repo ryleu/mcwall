@@ -466,6 +466,23 @@ def cmd_use(args) -> int:
     return 0
 
 
+def _completions(what: str) -> list[str]:
+    """Names a shell can offer for a positional.
+
+    Runs on every TAB, so it stays quiet: a missing instance or unreadable
+    config means no suggestions, never an error in the middle of a prompt.
+    """
+    try:
+        config = _load()
+        if what == "builds":
+            return [b.pack_id for b in library_builds(config.library.root)]
+        if what == "worlds":
+            return [w.name for w in session.worlds(producer.game_dir(config))]
+    except Exception:  # noqa: BLE001 - completion must never be loud
+        return []
+    return []
+
+
 def cmd_tui(args) -> int:
     from .tui.app import run
     from .tui.state import command_specs
@@ -486,6 +503,9 @@ def build_parser() -> argparse.ArgumentParser:
     # Hidden: the shells call this, people do not. Generated from this very
     # parser, so a completion can never offer a command that is not here.
     parser.add_argument("--completion", choices=("bash", "zsh"),
+                        help=argparse.SUPPRESS)
+    # Also hidden: what the completion scripts call to fill in a positional.
+    parser.add_argument("--complete", choices=("builds", "worlds"),
                         help=argparse.SUPPRESS)
     subparsers = parser.add_subparsers(dest="command")
 
@@ -611,6 +631,10 @@ def main(argv: list[str] | None = None) -> int:
         from .completion import render
 
         print(render(build_parser(), args.completion), end="")
+        return 0
+    if args.complete:
+        for name in _completions(args.complete):
+            print(name)
         return 0
     if not getattr(args, "func", None):
         parser.print_help()

@@ -9,6 +9,21 @@ flag appears in the shell the moment it exists in the code.
 from __future__ import annotations
 
 
+# What a positional should offer. `path` takes a build id or any directory
+# holding a manifest, so it completes as both; `world` is a save name.
+POSITIONALS = {
+    "path": ("builds", True),
+    "world": ("worlds", False),
+}
+
+
+_positional_dests: dict = {}
+
+
+def _positionals(parser) -> list[str]:
+    return [a.dest for a in parser._actions if not a.option_strings and a.dest != "help"]
+
+
 def _leaves(parser, prefix: tuple[str, ...] = ()) -> dict[tuple[str, ...], list[str]]:
     """Every runnable command path, mapped to its option flags."""
     group = next(
@@ -35,7 +50,23 @@ def _groups(leaves) -> dict[tuple[str, ...], list[str]]:
     return {prefix: sorted(words) for prefix, words in groups.items()}
 
 
+def _collect_positionals(parser, prefix=()):
+    group = next(
+        (a for a in parser._actions
+         if getattr(a, "choices", None) and hasattr(a, "add_parser")),
+        None,
+    )
+    if group is None:
+        return {prefix: _positionals(parser)}
+    found = {}
+    for name, sub in group.choices.items():
+        found.update(_collect_positionals(sub, prefix + (name,)))
+    return found
+
+
 def bash(parser) -> str:
+    global _positional_dests
+    _positional_dests = _collect_positionals(parser)
     leaves = _leaves(parser)
     groups = _groups(leaves)
 
@@ -58,10 +89,37 @@ def bash(parser) -> str:
         lines.append('        "%s")' % " ".join(prefix))
         lines.append(f'            COMPREPLY=($(compgen -W "{" ".join(words)}" -- "$cur")); return;;')
     for path, flags in sorted(leaves.items(), key=lambda kv: -len(kv[0])):
-        if not flags:
+        words = list(flags)
+        kind = dirs = None
+        for dest in _positional_dests.get(path, []):
+            if dest in POSITIONALS:
+                kind, dirs = POSITIONALS[dest]
+        if not words and kind is None:
             continue
         lines.append('        "%s")' % " ".join(path))
-        lines.append(f'            COMPREPLY=($(compgen -W "{" ".join(flags)}" -- "$cur")); return;;')
+        if kind:
+            # Read names line by line: "New World" is one suggestion, and
+            # `compgen -W` would split it into two. printf %q quotes the
+            # space so the completed word is usable as typed.
+            lines += [
+                "            local -a _names",
+                f'            mapfile -t _names < <(mcwall --complete {kind} 2>/dev/null)',
+                '            local _n',
+                '            for _n in "${_names[@]}"; do',
+                '                [[ "$_n" == "$cur"* ]] && COMPREPLY+=("$(printf %q "$_n")")',
+                "            done",
+            ]
+            if words:
+                lines.append(
+                    f'            COMPREPLY+=($(compgen -W "{" ".join(words)}" -- "$cur"))'
+                )
+            if dirs:
+                lines.append('            COMPREPLY+=($(compgen -d -- "$cur"))')
+            lines.append("            return;;")
+        else:
+            lines.append(
+                f'            COMPREPLY=($(compgen -W "{" ".join(words)}" -- "$cur")); return;;'
+            )
     lines += [
         "    esac",
         "}",
@@ -72,6 +130,8 @@ def bash(parser) -> str:
 
 
 def zsh(parser) -> str:
+    global _positional_dests
+    _positional_dests = _collect_positionals(parser)
     leaves = _leaves(parser)
     groups = _groups(leaves)
 
@@ -120,10 +180,26 @@ def zsh(parser) -> str:
         lines.append('        "%s")' % " ".join(prefix))
         lines.append(f"            _describe 'command' \"({joined})\" && return;;")
     for path, flags in sorted(leaves.items(), key=lambda kv: -len(kv[0])):
-        if not flags:
+        kind = dirs = None
+        for dest in _positional_dests.get(path, []):
+            if dest in POSITIONALS:
+                kind, dirs = POSITIONALS[dest]
+        if not flags and kind is None:
             continue
         lines.append('        "%s")' % " ".join(path))
-        lines.append(f"            _values 'option' {' '.join(flags)} && return;;")
+        if kind:
+            lines += [
+                "            local -a _names",
+                f'            _names=(${{(f)"$(mcwall --complete {kind} 2>/dev/null)"}})',
+                "            _describe -t names 'name' _names",
+            ]
+            if dirs:
+                lines.append("            _files -/")
+            if flags:
+                lines.append(f"            _values 'option' {' '.join(flags)}")
+            lines.append("            return;;")
+        else:
+            lines.append(f"            _values 'option' {' '.join(flags)} && return;;")
     lines += [
         "    esac",
         "}",
