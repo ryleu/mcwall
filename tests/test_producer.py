@@ -173,6 +173,7 @@ def test_identity_covers_camera_resolution_and_distance(config):
     variants = {
         "resolution": dc_replace(config, library=dc_replace(config.library, width=1920)),
         "render_distance": dc_replace(config, render=dc_replace(config.render, render_distance=8)),
+        "hdr_capture": dc_replace(config, render=dc_replace(config.render, hdr_capture=True)),
     }
     for name, variant in variants.items():
         assert pack_id(variant) != base, f"{name} does not change the build key"
@@ -180,6 +181,12 @@ def test_identity_covers_camera_resolution_and_distance(config):
     # Warm-up frames decide how settled a frame is, not what it shows.
     tuned = dc_replace(config, render=dc_replace(config.render, warmup_frames=60))
     assert pack_id(tuned) == base, "warm-up frames should not fork the library"
+
+    # The capture depth is mixed in only when it is on, so every library built
+    # before the option existed keeps the key it already has.
+    assert config.render.hdr_capture is False
+    assert pack_id(dc_replace(config, render=dc_replace(
+        config.render, hdr_capture=False))) == base, "the default must not re-key"
 
     # Moving the player is a different shot, so a different build.
     _move_camera(config, (500.0, 90.0, -500.0))
@@ -730,3 +737,50 @@ def test_a_configured_account_wins(config, monkeypatch, tmp_path):
     _accounts(monkeypatch, tmp_path, [("ryleu", True)])
     pinned = replace_render(config, prism_account="StoleYourSushi")
     assert producer.prism_account(pinned) == "StoleYourSushi"
+
+
+def test_a_16_bit_capture_is_not_reduced_by_gradfun(tmp_path):
+    """gradfun has no deep format, so ffmpeg would drop to 8 bits before it.
+
+    That failure is invisible — the conversion succeeds and the output looks
+    exactly like the 8-bit pipeline's, so a float render would cost hours and
+    change nothing. Pinned here because only the filter string shows it.
+    """
+    import struct
+    import zlib
+
+    from mcwall.deband import DebandSettings, encode_command, png_bit_depth
+
+    def write_png(path, depth):
+        # Smallest legal PNG: IHDR is all these functions read.
+        ihdr = struct.pack(">IIBBBBB", 1, 1, depth, 2, 0, 0, 0)
+        chunk = struct.pack(">I", len(ihdr)) + b"IHDR" + ihdr
+        chunk += struct.pack(">I", zlib.crc32(b"IHDR" + ihdr))
+        path.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk)
+        return path
+
+    deep = write_png(tmp_path / "deep.png", 16)
+    shallow = write_png(tmp_path / "shallow.png", 8)
+    settings = DebandSettings()
+
+    assert png_bit_depth(deep) == 16
+    assert png_bit_depth(shallow) == 8
+
+    # A deep source is encoded truly losslessly. near-lossless exists to
+    # smooth away low-amplitude noise, which is precisely the dither that
+    # makes an 8-bit output of a 16-bit capture worth having.
+    deep_cmd = encode_command(deep, tmp_path / "o.webp", True, settings)
+    assert "-lossless" in deep_cmd
+    assert "-near_lossless" not in deep_cmd
+
+    # The 8-bit path is untouched: those images have no dither to protect and
+    # near-lossless is what keeps gradfun's from being stripped.
+    shallow_cmd = encode_command(shallow, tmp_path / "o.webp", False, settings)
+    assert "-near_lossless" in shallow_cmd
+    assert "-lossless" not in shallow_cmd
+
+    # Anything that is not a PNG falls back to the 8-bit path rather than
+    # guessing, so a non-PNG staging format cannot silently skip the deband.
+    other = tmp_path / "frame.webp"
+    other.write_bytes(b"RIFF....WEBP")
+    assert png_bit_depth(other) == 8

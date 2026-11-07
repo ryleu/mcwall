@@ -256,6 +256,10 @@ def library_identity(config: Config) -> str:
     digest.update(",".join(f"{v:.3f}" for v in render_camera(config)).encode())
     digest.update(f"{config.library.width}x{config.library.height}".encode())
     digest.update(str(config.render.render_distance).encode())
+    # Mixed in only when set, so turning it on forks the library while every
+    # library built before the option existed keeps the identity it has.
+    if config.render.hdr_capture:
+        digest.update(b"hdr16")
     return digest.hexdigest()[:10]
 
 
@@ -540,6 +544,12 @@ def launch(
         environment["MCWALL_CAPTURE"] = "1"
     else:
         environment.pop("MCWALL_CAPTURE", None)
+    # Separate from the capture gate: the promotion has to be off for an
+    # ordinary launch, and off for a batch that did not ask for it.
+    if capture and config.render.hdr_capture:
+        environment["MCWALL_HDR"] = "1"
+    else:
+        environment.pop("MCWALL_HDR", None)
     # Straight to a file, never a pipe: the client logs far more than a pipe
     # buffer holds and nothing here would be draining it.
     log_path = state / "client.log"

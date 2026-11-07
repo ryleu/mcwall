@@ -81,6 +81,13 @@ class RenderConfig:
     # moving the shot means flying somewhere and quitting, not editing a file.
     world: str = "mcwall-template"
     warmup_frames: int = 120
+    # Capture in floating point instead of 8-bit. The game quantises the
+    # frame to RGBA8 inside the GPU, which leaves a night sky spanning ~18 of
+    # 255 levels and no sub-level detail for any dither to spend — which is
+    # why debanding the 8-bit output never worked. Set, the colour
+    # attachments are promoted to RGBA16F and the mod writes 16-bit PNG.
+    # It changes what the pictures look like, so it forks the library.
+    hdr_capture: bool = False
     render_distance: int = 16
     # Ticks the chunk counts must hold steady before a capture is allowed.
     terrain_stable_ticks: int = 40

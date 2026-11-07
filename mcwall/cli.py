@@ -77,6 +77,8 @@ def cmd_render(args) -> int:
         print(f"current sub-season: {here.key}")
 
     identity = producer.shaderpack_identity(config)
+    if args.hdr:
+        config = config_mod.replace_render(config, hdr_capture=True)
     plan = producer.build_plan(config, rebuild=args.rebuild)
     # The build directory is keyed on everything that decides the picture, so
     # a changed shaderpack, world, camera or resolution simply lands somewhere
@@ -559,6 +561,9 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="shorthand for --sub-season <the one it is right now>",
     )
+    world_render.add_argument("--hdr", action="store_true",
+                              help="capture in float and stage 16-bit PNG "
+                                   "(forks the library)")
     world_render.add_argument("--dry-run", action="store_true",
                               help="plan the work without starting the game")
     world_render.add_argument("--windowed", action="store_true",

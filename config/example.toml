@@ -30,6 +30,10 @@ quality = 90
 # them, so the output must be near-lossless or a lossy encode strips it back
 # out. Costs about 8x the disk: 0.4 GB -> 3.2 GB for the full grid.
 deband = true
+# Only used for 8-bit captures. A float capture (render.hdr_capture) is
+# dithered to 8 bits and then encoded truly losslessly, because near-lossless
+# exists to smooth away low-amplitude noise and that noise *is* the dither —
+# it is also three times slower. See docs/findings.md.
 near_lossless = 60
 
 # The weather axis. Dropping "thunder" cuts 576 of the 1728 cells (a third)
@@ -48,6 +52,14 @@ world = "mcwall-template"
 # volumetrics have settled. Check with scripts/repeatability.py: PSNR between
 # two renders of the same job should be above 40 dB.
 warmup_frames = 120
+# Capture in floating point rather than 8-bit. The game quantises each frame
+# to RGBA8 inside the GPU, which leaves a night sky spanning ~18 of 255 levels
+# and nothing below a level for a dither to spend — the reason debanding the
+# 8-bit output never worked. Set, the colour attachments become RGBA16F and
+# the mod stages 16-bit PNG, so the deband pass has precision to trade.
+# It changes what the pictures look like, so it forks the library.
+# `mcwall world render --hdr` turns it on for one run.
+hdr_capture = false
 # The camera is NOT configured here. It is read from the world's own save, so
 # the shot is moved by flying somewhere in-game and quitting — see
 # `mcwall edit`. This file only changes how mcwall behaves, never what the

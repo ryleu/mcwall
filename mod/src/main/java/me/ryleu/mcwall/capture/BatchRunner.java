@@ -582,15 +582,24 @@ public final class BatchRunner {
         Path target = captureTarget;
         try {
             Minecraft minecraft = Minecraft.getInstance();
-            try (NativeImage image = Screenshot.takeScreenshot(minecraft.getMainRenderTarget())) {
-                Files.createDirectories(target.getParent());
-                // Write beside the target and rename, so a killed batch never
-                // leaves a half-written PNG that resume would skip.
-                Path temporary = target.resolveSibling(target.getFileName() + ".part");
-                image.writeToFile(temporary);
-                Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE,
-                        StandardCopyOption.REPLACE_EXISTING);
+            Files.createDirectories(target.getParent());
+            // Write beside the target and rename, so a killed batch never
+            // leaves a half-written PNG that resume would skip.
+            Path temporary = target.resolveSibling(target.getFileName() + ".part");
+            if (HdrCapture.enabled()) {
+                HdrCapture.Stats stats =
+                        HdrCapture.writePng16(minecraft.getMainRenderTarget(), temporary);
+                LOGGER.info("mcwall: {} float range {}..{}, {}% on 8-bit steps",
+                        target.getFileName(), stats.min(), stats.max(),
+                        Math.round(stats.quantised() * 100.0));
+            } else {
+                try (NativeImage image =
+                             Screenshot.takeScreenshot(minecraft.getMainRenderTarget())) {
+                    image.writeToFile(temporary);
+                }
             }
+            Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING);
         } catch (Exception exception) {
             captureError = exception.toString();
         } finally {

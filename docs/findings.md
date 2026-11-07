@@ -120,6 +120,28 @@ no `scripts/` directory — which is exactly the path the home-manager unit uses
 pack bytes, the pack's own option file (both spellings Iris might use), and
 only `shaderPack` and `enableShaders` from Iris's config.
 
+## Why the stack is pinned to 1.21.4
+
+Nothing in `mods.lock.json` requires it. Every mod in the current set —
+fabric-api, sodium, iris, glitchcore, serene-seasons — and Complementary
+Unbound all ship builds for 1.21.11 and the 26.x line.
+
+The pin is held by a dependency that is not installed yet. Astrocraft, which
+mode 2 needs (`docs/mode2-and-loops.md`), has these builds and no newer:
+
+```
+1.20.1 1.20.2 1.20.3 1.20.4 1.20.5 1.20.6 1.21 1.21.1 1.21.4
+```
+
+1.21.4 is therefore the newest version on which mode 2 is possible at all.
+Moving the stack forward buys maintained mods and costs the next phase, so
+the version stays until Astrocraft moves or mode 2 is abandoned.
+
+One consequence is already paid: rrtt217's HDR Mod, which promotes the
+framebuffer to `RGBA16F`, publishes 1.20–1.21.1 and 1.21.9–26.x with nothing
+between. Getting more than 8 bits out of the game at 1.21.4 is a port, not an
+install.
+
 ## Banding
 
 Measured sky luma across a day:
@@ -156,6 +178,92 @@ terrain lighting.
 So conversion runs `gradfun` and encodes near-lossless, straight from the
 lossless capture. The dither is load-bearing: a lossy re-encode strips it and
 the banding returns exactly as it was.
+
+**Ten-bit output cannot reach the screen through awww.** The panel is 10-bit
+and so is the compositor surface, but the wallpaper daemon between them is
+not. `PixelFormat` in swww's IPC is `Bgr | Rgb | Abgr | Argb` and nothing
+else, and the compression either side of the socket works on 3- and 4-*byte*
+pixels, so a 10-bit image has nowhere to go even once decoded. AVIF is also
+absent: upstream puts it behind a non-default `avif = ["image/avif-native"]`
+cargo feature needing dav1d, which this build does not enable. A genuine
+10-bit path would have to go through `mpvpaper`, which is a different display
+path than stills use.
+
+That costs less than it looks. Dithering from float down to 8 bits is the
+ordinary case and it works, because there is input precision to spend. The
+pass that failed was 8-bit into 8-bit, which has no headroom at all — the
+gradient was already gone.
+
+## Capturing in float
+
+`mcwall world render --hdr` promotes the colour attachments to `RGBA16F` and
+stages 16-bit PNG. Measured on this camera, midnight, `early_autumn/clear`:
+
+| Source | p1..p99 | 8-bit levels | distinct 16-bit levels |
+| --- | --- | --- | --- |
+| Live 8-bit library | 15.4..40.0 | 26 | 1,029 |
+| **Float capture** | 15.1..40.4 | 26 | **6,486** |
+
+The mod reports `float range <min>..<max>, N% on 8-bit steps` per frame. `0%`
+is the proof the promotion applied; a mixin that fails to apply still reads
+back and still writes a 16-bit file, and would say `100%`.
+
+**It needs two mixins, not one.** `MainTarget` does not override
+`createBuffers` — it allocates from its own private `allocateColorAttachment`
+(`MainTarget.java:23`), which a mixin on `RenderTarget` never sees. Promoting
+only `RenderTarget` builds, loads, renders and leaves the captured image
+exactly as it was.
+
+**Complementary writes above 1.0.** Observed up to 1.0117. The capture clamps
+to 0..1, which is right for a tone-mapped final pass, but the headroom is
+real and `Stats.max` records it.
+
+**gradfun cannot consume a 16-bit frame.** It has no deep pixel format, so
+ffmpeg auto-inserts a conversion — `rgb48be -> fmt:gbrp`, 8 bits — *before*
+the filter runs. Feeding the float capture to the existing deband pass
+throws the extra bits away and produces what it always did.
+
+**ffmpeg cannot dither an RGB depth reduction at all.** `zscale`'s four
+dither modes and every `-sws_dither` setting give byte-identical output to
+`d=none` on `rgb48 -> rgb24`; they apply on YUV paths. The `noise` filter
+rejects 16-bit input outright. So the quantisation is done in numpy
+(`deband.dither_to_8bit`) with triangular noise one 8-bit level wide, under a
+fixed seed so `scripts/repeatability.py` still compares equal.
+
+**near-lossless is the wrong encoder for a dithered frame, and the slow one.**
+Its whole job is smoothing away low-amplitude noise, which is the dither.
+Measured on one 2880x1800 post-sunset frame:
+
+| Encoder | Time | Size | Sky column inside a flat plateau |
+| --- | --- | --- | --- |
+| `-near_lossless 60` | 3.96 s | 3.7 MB | 30% |
+| `-near_lossless 90` | 3.72 s | 3.8 MB | 28% |
+| **`-lossless -z 4`** | **1.25 s** | 4.9 MB | **9%** |
+
+Three times faster and it keeps the dither; a third more disk. Deep sources
+are therefore encoded truly losslessly, and `near_lossless` now applies only
+to the 8-bit repair path.
+
+End to end on the three post-sunset slots, same camera and sub-season, as the
+share of a sky column sitting inside a >=4px flat plateau:
+
+| Tick | 8-bit capture + gradfun + near-lossless | Float capture + TPDF + lossless |
+| --- | --- | --- |
+| 12800 | 49% | **6%** |
+| 13050 | 45% | **7%** |
+| 13300 | 47% | **7%** |
+
+About 5.1 MB per frame, 3.8 s to convert: roughly 8.8 GB and ten minutes
+across twelve cores for a full grid.
+
+**Banding is after sunset, and the measurement that finds it is 1-D.**
+Scoring 300x300 windows for "few levels, little texture" ranks twilight
+*below* night and misses it entirely — these bands are 50-150px tall, so a
+window that size sees a plausible gradient. What finds them is a vertical
+column: count runs of identical value. A post-sunset frame from the 8-bit
+capture has 27 plateaus of >=4px in 400 rows and spends 45% of the column
+inside one. The same frame captured in float has **zero**, which is the
+proof the contouring is quantisation and not something the shader drew.
 
 ## Rain is a window, not an instant
 
