@@ -297,6 +297,26 @@ Arguments matter as much as commands: completing only flags is the useless
 half. Dynamic values come from `mcwall --complete {builds,worlds}`, which is
 hidden, quiet on failure, and the same code the commands themselves use.
 
+**Driving one shell is not driving both.** The zsh function declared `local
+-a path`, and in zsh that array is tied to `$PATH` — filling it with the
+command words emptied PATH for the rest of the call, so every
+`mcwall --complete ...` inside it returned nothing. Commands and flags still
+completed, because those are literals in the script; only the branches that
+shell out went quiet. Every test passed: the behavioural ones ran in bash,
+where `path` is an ordinary name, and zsh was only checked for parsing and
+for containing the right words. A script can be correct to read and silent
+to run. `tests/test_completion.py` now drives zsh through a pty, wrapping
+`compadd` to record what it is handed rather than scraping a screen whose
+contents depend on TERM and menu styles.
+
+Three more gaps came out of auditing the two against each other, all of them
+things argparse already knew and the generator did not ask for: a group
+offered its subcommands but not its own flags, so `mcwall --completion` — the
+flag that prints the script — could never be completed; flags with `choices`
+offered nothing; and the command path was read by dropping words that start
+with `-`, which keeps the *value*, so `--limit 5` left the path as
+`world render 5` and matched no branch at all.
+
 ## Keep documentation in the present tense
 
 Comments and docs describe how the code is *now* and why. They do not narrate
